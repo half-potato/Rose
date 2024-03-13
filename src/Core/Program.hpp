@@ -21,9 +21,10 @@ struct Program {
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, ***mPipeline);
 
-		std::vector<vk::DescriptorSet> descriptorSets(mParameters.mDescriptorSets.size());
-		std::ranges::transform(mParameters.mDescriptorSets, descriptorSets.begin(), [](const auto& ds) { return **ds; });
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, ***mPipeline->mLayout, 0, descriptorSets);
+		std::vector<vk::DescriptorSet> descriptorSets;
+		for (const auto& ds : mParameters.mDescriptorSets)
+			descriptorSets.emplace_back(**ds);
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, ***mPipeline->mLayout, 0, descriptorSets, {});
 
 		for (const auto& [name, c] : shader.mPushConstants) {
 			if (mParameters.Contains(name)) {

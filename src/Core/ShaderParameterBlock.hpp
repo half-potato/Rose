@@ -152,7 +152,7 @@ struct ShaderParameterBlock {
 			if (const auto* v = std::get_if<BufferParameter>(&param)) {
 				const auto& buffer = *v;
 				if (!buffer) continue;
-				info.buffer = vk::DescriptorBufferInfo(**buffer.GetBuffer(), buffer.Offset(), buffer.SizeBytes());
+				info.buffer = buffer;
 				w.setBufferInfo(info.buffer);
 			} else if (const auto* v = std::get_if<ImageParameter>(&param)) {
 				const auto& [image, layout, accessFlags, sampler] = *v;
@@ -171,10 +171,10 @@ struct ShaderParameterBlock {
 		if (!uniformData.empty()) {
 			for (const auto&[name,data] : uniformData) {
 				auto hostBuf = CreateBuffer(device, data);
-				auto buf = std::make_shared<Buffer>(device,
+				BufferView buf = { std::make_shared<Buffer>(device,
 					vk::BufferUsageFlagBits::eUniformBuffer|vk::BufferUsageFlagBits::eTransferDst,
 					vk::MemoryPropertyFlagBits::eDeviceLocal,
-					VMA_ALLOCATION_CREATE_STRATEGY_MIN_TIME_BIT);
+					VMA_ALLOCATION_CREATE_STRATEGY_MIN_TIME_BIT) };
 
 				commandBuffer.Copy(hostBuf, buf);
 
@@ -186,7 +186,7 @@ struct ShaderParameterBlock {
 
 				vk::WriteDescriptorSet& w = writes.emplace_back(vk::WriteDescriptorSet(**mDescriptorSets[pipeline.GetDescriptors().at(name).mSet], 0, 0, 1, vk::DescriptorType::eUniformBuffer));
 				DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
-				info.buffer = vk::DescriptorBufferInfo(**buf.GetBuffer(), buf.Offset(), buf.SizeBytes());
+				info.buffer = buf;
 				w.setBufferInfo(info.buffer);
 			}
 		}

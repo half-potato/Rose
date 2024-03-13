@@ -48,7 +48,8 @@ void ConfigureFeatures(Device& device) {
 Device::Device(const Instance& instance, const vk::raii::PhysicalDevice physicalDevice, const std::vector<std::string>& deviceExtensions) {
 	mPhysicalDevice = physicalDevice;
 
-	mExtensions = deviceExtensions | std::ranges::to<std::unordered_set<std::string>>();
+	for (const auto& e : deviceExtensions)
+		mExtensions.emplace(e);
 
 	ConfigureFeatures(*this);
 

@@ -68,8 +68,8 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBi
 Instance::Instance(const std::vector<std::string>& extensions, const std::vector<std::string>& layers) {
 	mContext = vk::raii::Context();
 
-	mExtensions       = extensions | std::ranges::to<std::unordered_set<std::string>>();
-	mValidationLayers = layers     | std::ranges::to<std::unordered_set<std::string>>();
+	for (const auto& e : extensions) mExtensions.emplace(e);
+	for (const auto& e : layers) mValidationLayers.emplace(e);
 
 	// Remove unsupported layers
 

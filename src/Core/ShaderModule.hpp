@@ -1,6 +1,9 @@
 #pragma once
 
+#ifndef __GNUC__
 #include <stacktrace>
+#endif
+
 #include <source_location>
 
 #include "Device.hpp"
@@ -17,11 +20,19 @@ inline std::vector<std::filesystem::path> GetDefaultSearchPaths() {
 	};
 }
 
+#ifdef __GNUC__
+
+#define FindShaderPath(name) (std::filesystem::path(std::source_location::current().file_name()).parent_path() / name)
+
+#else
+
 inline std::filesystem::path FindShaderPath(const std::string& name) {
 	// search in the folder of the caller's source file
 	const std::string& callerSrc = std::stacktrace::current()[1].source_file();
 	return std::filesystem::path(callerSrc).parent_path() / name;
 }
+
+#endif
 
 using ShaderDefines = NameMap<std::string>;
 
@@ -87,6 +98,5 @@ struct ShaderModule {
 		return false;
 	}
 };
-
 
 }

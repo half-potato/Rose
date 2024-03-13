@@ -27,6 +27,8 @@ struct BufferView {
 	std::shared_ptr<Buffer> mBuffer = nullptr;
 	vk::DeviceSize mOffset = 0; // In bytes
 	vk::DeviceSize mSize = 0; // Number of elements
+
+	inline operator vk::DescriptorBufferInfo() const { return vk::DescriptorBufferInfo{ **mBuffer, mOffset, mSize }; }
 };
 
 template<typename T>

@@ -52,6 +52,8 @@ struct Image {
 	inline       vk::Image* operator->()       { return &mImage; }
 	inline const vk::Image* operator->() const { return &mImage; }
 
+	inline operator bool() const { return mImage; }
+
 	const vk::ImageView GetView(const Device& device, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType viewType = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
 
 	inline const SubresourceLayoutState& GetSubresourceState(const uint32_t arrayLayer, const uint32_t level) const {
@@ -101,6 +103,8 @@ struct ImageView {
 
 	inline bool operator==(const ImageView& rhs) const { return mView == rhs.mView; }
 	inline bool operator!=(const ImageView& rhs) const { return mView != rhs.mView; }
+
+	inline operator bool() const { return mView && mImage; }
 
 	inline vk::ImageSubresourceLayers GetSubresourceLayer(const uint32_t levelOffset = 0) const {
 		return vk::ImageSubresourceLayers(mSubresource.aspectMask, mSubresource.baseMipLevel + levelOffset, mSubresource.baseArrayLayer, mSubresource.layerCount);
