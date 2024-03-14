@@ -1,7 +1,7 @@
 #include <iostream>
 #include <span>
 
-#include "AppContext.hpp"
+#include "Core/Instance.hpp"
 #include "Core/Program.hpp"
 
 int main(int argc, char** argv) {
@@ -10,16 +10,32 @@ int main(int argc, char** argv) {
 	using namespace RoseEngine;
 
 	Instance instance = Instance({}, { "VK_LAYER_KHRONOS_validation" });
-	Device device = Device(instance, instance->enumeratePhysicalDevices()[0]);
 
-	Program test = CreateProgram(device, "Test.slang");
+	ref<Device> device = make_ref<Device>(instance, instance->enumeratePhysicalDevices()[0]);
 
-	auto data = CreateBuffer(device, std::vector<float>{ 1, 2, 3, 4, 5 });
+	ref<CommandContext> context = CommandContext::Create(device);
 
-	std::shared_ptr<vk::raii::CommandBuffer> commandBuffer;
+	auto data = CreateBuffer(*device, std::vector<float>{ 1, 2, 3, 4, 5 }, vk::BufferUsageFlagBits::eTransferSrc|vk::BufferUsageFlagBits::eTransferDst);
 
-	test(*commandBuffer, { (uint32_t)data.size(), 1, 1 }, BufferParameter(data), ConstantParameter(2.f), ConstantParameter(0.5f));
+	ConstantParameter scale = 2.f;
+	ConstantParameter offset = 0.5f;
+	ConstantParameter scale2 = -1.f;
 
+	std::cout << "expecting: ";
+	for (float f : data)
+		std::cout << (f*scale.get<float>() + offset.get<float>()) * scale2.get<float>() << ", ";
+	std::cout << std::endl;
+
+	auto test = Program::Create(*device, FindShaderPath("Test.slang"));
+	test->Parameter("scale2") = scale2;
+
+	BufferParameter dataGpu = CreateBuffer(*device, data.size_bytes());
+	context->Copy(data, dataGpu);
+	test->Dispatch(*context, (uint32_t)data.size(), dataGpu, scale, offset);
+	context->Copy(dataGpu, data);
+	device->Wait(context->Submit());
+
+	std::cout << "got: ";
 	for (float f : data)
 		std::cout << f << ", ";
 	std::cout << std::endl;

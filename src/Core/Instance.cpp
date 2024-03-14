@@ -25,12 +25,8 @@ namespace RoseEngine {
 #define BOLDCYAN    "\033[1m\033[36m"
 #define BOLDWHITE   "\033[1m\033[37m"
 
-bool Instance::sDisableDebugCallback = false;
-
 // Debug messenger functions
 VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
-	if (Instance::sDisableDebugCallback) return VK_FALSE;
-
 	std::string msgstr = pCallbackData->pMessage;
 
 	{ // skip past ' ... | MessageID = ... | '
@@ -49,8 +45,10 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBi
 	}
 
 	auto print_fn = [&](std::ostream& stream) {
-		stream << pCallbackData->pMessageIdName << ": " << std::endl;
-		stream << "\t" << BOLDWHITE << msgstr << RESET << std::endl;
+		stream << pCallbackData->pMessageIdName << std::endl;
+		stream << "\t";
+		stream << BOLDWHITE << msgstr << RESET;
+		stream << std::endl;
 		if (!specstr.empty())
 			stream << "\t" << specstr << std::endl;
 	};
@@ -99,24 +97,30 @@ Instance::Instance(const std::vector<std::string>& extensions, const std::vector
 
 	// create instance
 
-	vk::ApplicationInfo appInfo = {};
-	appInfo.pApplicationName = "Rose";
-	appInfo.applicationVersion = VK_MAKE_VERSION(0, 0, 0);
-	appInfo.pEngineName = "Rose";
-	appInfo.engineVersion = VK_MAKE_VERSION(0, 0, 0);
-	appInfo.apiVersion = mContext.enumerateInstanceVersion();
-	mInstance = vk::raii::Instance(mContext, vk::InstanceCreateInfo({}, &appInfo, validationLayers, instanceExts));
+	vk::ApplicationInfo appInfo {
+		.pApplicationName = "Rose",
+		.applicationVersion = VK_MAKE_VERSION(0, 0, 0),
+		.pEngineName = "Rose",
+		.engineVersion = VK_MAKE_VERSION(0, 0, 0),
+		.apiVersion = mContext.enumerateInstanceVersion()
+	};
+	mInstance = mContext.createInstance(vk::InstanceCreateInfo{}
+		.setPApplicationInfo(&appInfo)
+		.setPEnabledExtensionNames(instanceExts)
+		.setPEnabledLayerNames(validationLayers)
+	);
 
 	mVulkanApiVersion = appInfo.apiVersion;
 
 	std::cout << "Vulkan " << VK_VERSION_MAJOR(mVulkanApiVersion) << "." << VK_VERSION_MINOR(mVulkanApiVersion) << "." << VK_VERSION_PATCH(mVulkanApiVersion) << std::endl;
 
-	if (mValidationLayers.contains("VK_LAYER_KHRONOS_validation-messenger")) {
+	if (mValidationLayers.contains("VK_LAYER_KHRONOS_validation")) {
 		std::cout << "Creating debug messenger" << std::endl;
-		mDebugMessenger = vk::raii::DebugUtilsMessengerEXT(mInstance, vk::DebugUtilsMessengerCreateInfoEXT({},
-			vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-			DebugCallback));
+		mDebugMessenger = vk::raii::DebugUtilsMessengerEXT(mInstance, vk::DebugUtilsMessengerCreateInfoEXT{
+			.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+			.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+			.pfnUserCallback = DebugCallback
+		});
 	}
 }
 

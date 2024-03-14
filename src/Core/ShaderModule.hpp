@@ -37,59 +37,58 @@ inline std::filesystem::path FindShaderPath(const std::string& name) {
 using ShaderDefines = NameMap<std::string>;
 
 struct ShaderDescriptorBinding {
-	uint32_t mSet;
-	uint32_t mBinding;
-	vk::DescriptorType mDescriptorType;
-	std::vector<uint32_t> mArraySize;
-	uint32_t mInputAttachmentIndex;
-	bool mWritable;
+	uint32_t setIndex = 0;
+	uint32_t bindingIndex = 0;
+	vk::DescriptorType descriptorType = {};
+	std::vector<uint32_t> arraySize = {};
+	uint32_t inputAttachmentIndex = {};
+	bool writable = false;
 };
 struct ShaderConstantBinding {
-	uint32_t mOffset;
-	uint32_t mTypeSize;
-	std::string mParentDescriptor;
+	uint32_t offset = 0;
+	uint32_t typeSize = 0;
+	std::string parentDescriptor = {};
 };
 struct ShaderVariable {
-	uint32_t mLocation;
-	vk::Format mFormat;
-	std::string mSemantic;
-	uint32_t mSemanticIndex;
+	uint32_t location = 0;
+	vk::Format format = {};
+	std::string semantic = {};
+	uint32_t semanticIndex = 0;
+};
+
+struct ShaderParameterBindings {
+	NameMap<ShaderDescriptorBinding> descriptors = {};
+	NameMap<ShaderConstantBinding>   uniforms = {};
+	NameMap<vk::DeviceSize>          uniformBufferSizes = {};
+	NameMap<ShaderConstantBinding>   pushConstants = {};
+	NameMap<ShaderVariable>          inputVariables = {};
+	NameMap<ShaderVariable>          outputVariables = {};
+	std::vector<std::string>         entryPointArguments = {};
 };
 
 struct ShaderModule {
 	vk::raii::ShaderModule mModule = nullptr;
 	size_t mSpirvHash = 0;
 
-	std::chrono::file_clock::time_point mCompileTime;
-	std::vector<std::filesystem::path>  mSourceFiles;
+	std::chrono::file_clock::time_point mCompileTime = {};
+	std::vector<std::filesystem::path>  mSourceFiles = {};
 
-	vk::ShaderStageFlagBits mStage;
+	vk::ShaderStageFlagBits mStage = {};
 
 	// Only valid for compute shaders
-	vk::Extent3D mWorkgroupSize;
+	vk::Extent3D mWorkgroupSize = {};
 
-	NameMap<ShaderDescriptorBinding> mDescriptors;
-	NameMap<ShaderConstantBinding>   mUniforms;
-	NameMap<vk::DeviceSize>          mUniformBufferSizes;
-	NameMap<ShaderConstantBinding>   mPushConstants;
-	NameMap<ShaderVariable>          mInputVariables;
-	NameMap<ShaderVariable>          mOutputVariables;
-	std::vector<std::string>         mEntryPointArguments;
+	ShaderParameterBindings mBindings;
 
+public:
 	inline       vk::raii::ShaderModule& operator*()        { return mModule; }
 	inline const vk::raii::ShaderModule& operator*() const  { return mModule; }
 	inline       vk::raii::ShaderModule* operator->()       { return &mModule; }
 	inline const vk::raii::ShaderModule* operator->() const { return &mModule; }
 
-	ShaderModule() = default;
-	ShaderModule(ShaderModule&&) = default;
-	ShaderModule(
-		const Device& device,
-		const std::filesystem::path& sourceFile,
-		const std::string& entryPoint = "main",
-		const std::string& profile = "sm_6_7",
-		const ShaderDefines& defines = {},
-		const std::vector<std::string>& compileArgs = {});
+	inline vk::ShaderStageFlagBits Stage() const { return mStage; }
+	inline vk::Extent3D            WorkgroupSize() const { return mWorkgroupSize; }
+	inline const auto&             Bindings() const { return mBindings; }
 
 	inline bool IsStale() const {
 		for (const auto& dep : mSourceFiles)
@@ -97,6 +96,14 @@ struct ShaderModule {
 				return true;
 		return false;
 	}
+
+	static ref<ShaderModule> Create(
+		const Device& device,
+		const std::filesystem::path& sourceFile,
+		const std::string& entryPoint = "main",
+		const std::string& profile = "sm_6_7",
+		const ShaderDefines& defines = {},
+		const std::vector<std::string>& compileArgs = {});
 };
 
 }

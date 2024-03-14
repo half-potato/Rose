@@ -3,7 +3,7 @@
 namespace RoseEngine {
 
 Buffer::Buffer(const Device& device, const vk::BufferCreateInfo& createInfo, const VmaAllocationCreateInfo& allocationInfo) {
-	vk::Result result = (vk::Result)vmaCreateBuffer(device.mMemoryAllocator, &(const VkBufferCreateInfo&)createInfo, &allocationInfo, &(VkBuffer&)mBuffer, &mAllocation, &mAllocationInfo);
+	vk::Result result = (vk::Result)vmaCreateBuffer(device.MemoryAllocator(), &(const VkBufferCreateInfo&)createInfo, &allocationInfo, &(VkBuffer&)mBuffer, &mAllocation, &mAllocationInfo);
 	if (result != vk::Result::eSuccess) {
 		mMemoryAllocator  = nullptr;
 		mAllocation = nullptr;
@@ -15,7 +15,7 @@ Buffer::Buffer(const Device& device, const vk::BufferCreateInfo& createInfo, con
 		return;
 	}
 
-	mMemoryAllocator = device.mMemoryAllocator;
+	mMemoryAllocator = device.MemoryAllocator();
 	mSize  = createInfo.size;
 	mUsage = createInfo.usage;
 	mMemoryFlags = (vk::MemoryPropertyFlags)mAllocationInfo.memoryType;
@@ -25,7 +25,7 @@ Buffer::Buffer(const Device& device, const vk::BufferCreateInfo& createInfo, con
 Buffer::~Buffer() {
 	if (mMemoryAllocator && mBuffer && mAllocation) {
 		vmaDestroyBuffer(mMemoryAllocator, mBuffer, mAllocation);
-		mMemoryAllocator  = nullptr;
+		mMemoryAllocator = nullptr;
 		mBuffer     = nullptr;
 		mAllocation = nullptr;
 	}

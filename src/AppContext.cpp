@@ -1,6 +1,7 @@
-#include "AppContext.hpp"
-
 #include <GLFW/glfw3.h>
+
+#include "AppContext.hpp"
+#include "Core/Instance.hpp"
 
 namespace RoseEngine {
 
