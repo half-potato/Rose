@@ -48,17 +48,19 @@ void ConfigureFeatures(Device& device, auto& features, auto& createInfo) {
 	std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(createInfo).rayQuery = device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 }
 
-Device::Device(const Instance& instance, const vk::raii::PhysicalDevice physicalDevice, const std::vector<std::string>& deviceExtensions) {
-	mPhysicalDevice = physicalDevice;
+ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice physicalDevice, const std::vector<std::string>& deviceExtensions) {
+	ref<Device> device = make_ref<Device>();
+
+	device->mPhysicalDevice = physicalDevice;
 
 	for (const auto& e : deviceExtensions)
-		mExtensions.emplace(e);
+		device->mExtensions.emplace(e);
 
-	ConfigureFeatures(*this, mFeatures, mCreateInfo);
+	ConfigureFeatures(*device, device->mFeatures, device->mCreateInfo);
 
 	// Configure queues
 
-	const auto queueFamilyProperties = mPhysicalDevice.getQueueFamilyProperties();
+	const auto queueFamilyProperties = device->mPhysicalDevice.getQueueFamilyProperties();
 	std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
 	float queuePriority = 1.0f;
 	for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
@@ -75,50 +77,51 @@ Device::Device(const Instance& instance, const vk::raii::PhysicalDevice physical
 
 	std::vector<const char*> deviceExts;
 	std::vector<const char*> validationLayers;
-	for (const auto& s : mExtensions) deviceExts.emplace_back(s.c_str());
+	for (const auto& s : device->mExtensions) deviceExts.emplace_back(s.c_str());
 	for (const auto& s : instance.EnabledLayers()) validationLayers.emplace_back(s.c_str());
 
-	vk::DeviceCreateInfo& createInfo = mCreateInfo.get<vk::DeviceCreateInfo>()
+	vk::DeviceCreateInfo& createInfo = device->mCreateInfo.get<vk::DeviceCreateInfo>()
 		.setQueueCreateInfos(queueCreateInfos)
 		.setPEnabledLayerNames(validationLayers)
 		.setPEnabledExtensionNames(deviceExts)
-		.setPEnabledFeatures(&mFeatures);
-	mDevice = mPhysicalDevice.createDevice(createInfo);
+		.setPEnabledFeatures(&device->mFeatures);
+	device->mDevice = device->mPhysicalDevice.createDevice(createInfo);
 
-	mPipelineCache = mDevice.createPipelineCache({});
+	device->mPipelineCache = device->mDevice.createPipelineCache({});
 
 	// Create allocator
 
 	VmaAllocatorCreateInfo allocatorInfo{
 		.flags = 0,
-		.physicalDevice = *mPhysicalDevice,
-		.device   = *mDevice,
+		.physicalDevice = *device->mPhysicalDevice,
+		.device   = *device->mDevice,
 		.instance = **instance,
 		.vulkanApiVersion = instance.VulkanVersion()
 	};
-	if (mExtensions.contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME))                     allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
-	if (std::get<vk::PhysicalDeviceVulkan12Features>(mCreateInfo).bufferDeviceAddress) allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-	vmaCreateAllocator(&allocatorInfo, &mMemoryAllocator);
+	if (device->mExtensions.contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME))                     allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+	if (std::get<vk::PhysicalDeviceVulkan12Features>(device->mCreateInfo).bufferDeviceAddress) allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	vmaCreateAllocator(&allocatorInfo, &device->mMemoryAllocator);
 
 	// Create timeline semaphore
 
-	mCurrentSemaphoreValue = 0;
+	device->mCurrentSemaphoreValue = 0;
 	vk::StructureChain<vk::SemaphoreCreateInfo, vk::SemaphoreTypeCreateInfo> semaphoreInfo = {};
 	semaphoreInfo.get<vk::SemaphoreTypeCreateInfo>()
 		.setSemaphoreType(vk::SemaphoreType::eTimeline)
-		.setInitialValue(IncrementTimelineCounter());
-	mTimelineSemaphore = mDevice.createSemaphore(semaphoreInfo.get<vk::SemaphoreCreateInfo>());
+		.setInitialValue(device->IncrementTimelineCounter());
+	device->mTimelineSemaphore = device->mDevice.createSemaphore(semaphoreInfo.get<vk::SemaphoreCreateInfo>());
 
 	// Assign stuff
 
-	mUseDebugUtils = instance.DebugMessengerEnabled();
+	device->mUseDebugUtils = instance.DebugMessengerEnabled();
 
-	const auto& properties = mPhysicalDevice.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
-	SetDebugName(*mDevice, "[" + std::to_string(properties.get<vk::PhysicalDeviceProperties2>().properties.deviceID) + "]: " + properties.get<vk::PhysicalDeviceProperties2>().properties.deviceName.data());
+	const auto& properties = device->mPhysicalDevice.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
+	device->SetDebugName(*device->mDevice, "[" + std::to_string(properties.get<vk::PhysicalDeviceProperties2>().properties.deviceID) + "]: " + properties.get<vk::PhysicalDeviceProperties2>().properties.deviceName.data());
 
-	mLimits = properties.get<vk::PhysicalDeviceProperties2>().properties.limits;
-	mAccelerationStructureProperties = properties.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
+	device->mLimits = properties.get<vk::PhysicalDeviceProperties2>().properties.limits;
+	device->mAccelerationStructureProperties = properties.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 
+	return device;
 }
 Device::~Device() {
 	if (mMemoryAllocator != nullptr) {

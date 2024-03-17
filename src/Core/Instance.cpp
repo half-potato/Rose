@@ -26,7 +26,10 @@ namespace RoseEngine {
 #define BOLDWHITE   "\033[1m\033[37m"
 
 // Debug messenger functions
-VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity_, VkDebugUtilsMessageTypeFlagsEXT messageType_, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+	vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity = (vk::DebugUtilsMessageSeverityFlagBitsEXT)messageSeverity_;
+	vk::DebugUtilsMessageTypeFlagsEXT messageType = (vk::DebugUtilsMessageTypeFlagsEXT)messageType_;
+
 	std::string msgstr = pCallbackData->pMessage;
 
 	{ // skip past ' ... | MessageID = ... | '
@@ -53,9 +56,9 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBi
 			stream << "\t" << specstr << std::endl;
 	};
 
-	if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+	if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
 		print_fn(std::cerr << BOLDRED);
-	else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+	else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 		print_fn(std::cerr << BOLDYELLOW);
 	else
 		print_fn(std::cout << BOLDCYAN);
@@ -63,37 +66,37 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBi
 	return VK_FALSE;
 }
 
-Instance::Instance(const std::vector<std::string>& extensions, const std::vector<std::string>& layers) {
-	mContext = vk::raii::Context();
+ref<Instance> Instance::Create(const std::vector<std::string>& extensions, const std::vector<std::string>& layers) {
+	auto instance = make_ref<Instance>();
 
-	for (const auto& e : extensions) mExtensions.emplace(e);
-	for (const auto& e : layers) mValidationLayers.emplace(e);
+	instance->mContext = vk::raii::Context();
+
+	for (const auto& e : extensions) instance->mExtensions.emplace(e);
 
 	// Remove unsupported layers
 
-	if (!mValidationLayers.empty()) {
-		std::unordered_set<std::string> available;
-		for (const auto& layer : mContext.enumerateInstanceLayerProperties()) available.emplace(layer.layerName.data());
-		for (auto it = mValidationLayers.begin(); it != mValidationLayers.end();)
-			if (available.find(*it) == available.end()) {
-				std::cerr << "Warning: Removing unsupported validation layer: " << it->c_str() << std::endl;
-				it = mValidationLayers.erase(it);
-			} else
-				it++;
+	std::unordered_set<std::string> available;
+	for (const auto& layer : instance->mContext.enumerateInstanceLayerProperties()) available.emplace(layer.layerName.data());
+	for (const auto& e : layers) {
+		if (!available.contains(e)) {
+			std::cerr << "Warning: Removing unsupported validation layer: " << e << std::endl;
+			continue;
+		}
+		instance->mValidationLayers.emplace(e);
 	}
 
 	// Add debug extensions if needed
 
-	if (mValidationLayers.contains("VK_LAYER_KHRONOS_validation")) {
-		mExtensions.emplace(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-		mExtensions.emplace(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		mExtensions.emplace(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+	if (instance->mValidationLayers.contains("VK_LAYER_KHRONOS_validation")) {
+		instance->mExtensions.emplace(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+		instance->mExtensions.emplace(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		instance->mExtensions.emplace(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
 	}
 
 	std::vector<const char*> instanceExts;
 	std::vector<const char*> validationLayers;
-	for (const std::string& s : mExtensions) instanceExts.push_back(s.c_str());
-	for (const std::string& v : mValidationLayers) validationLayers.push_back(v.c_str());
+	for (const std::string& s : instance->mExtensions) instanceExts.push_back(s.c_str());
+	for (const std::string& v : instance->mValidationLayers) validationLayers.push_back(v.c_str());
 
 	// create instance
 
@@ -102,26 +105,30 @@ Instance::Instance(const std::vector<std::string>& extensions, const std::vector
 		.applicationVersion = VK_MAKE_VERSION(0, 0, 0),
 		.pEngineName = "Rose",
 		.engineVersion = VK_MAKE_VERSION(0, 0, 0),
-		.apiVersion = mContext.enumerateInstanceVersion()
+		.apiVersion = instance->mContext.enumerateInstanceVersion()
 	};
-	mInstance = mContext.createInstance(vk::InstanceCreateInfo{}
+	instance->mInstance = instance->mContext.createInstance(vk::InstanceCreateInfo{}
 		.setPApplicationInfo(&appInfo)
 		.setPEnabledExtensionNames(instanceExts)
 		.setPEnabledLayerNames(validationLayers)
 	);
 
-	mVulkanApiVersion = appInfo.apiVersion;
+	instance->mVulkanApiVersion = appInfo.apiVersion;
 
-	std::cout << "Vulkan " << VK_VERSION_MAJOR(mVulkanApiVersion) << "." << VK_VERSION_MINOR(mVulkanApiVersion) << "." << VK_VERSION_PATCH(mVulkanApiVersion) << std::endl;
+	std::cout << "Vulkan "
+		<< VK_VERSION_MAJOR(instance->mVulkanApiVersion) << "."
+		<< VK_VERSION_MINOR(instance->mVulkanApiVersion) << "."
+		<< VK_VERSION_PATCH(instance->mVulkanApiVersion) << std::endl;
 
-	if (mValidationLayers.contains("VK_LAYER_KHRONOS_validation")) {
-		std::cout << "Creating debug messenger" << std::endl;
-		mDebugMessenger = vk::raii::DebugUtilsMessengerEXT(mInstance, vk::DebugUtilsMessengerCreateInfoEXT{
-			.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-			.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+	if (instance->mValidationLayers.contains("VK_LAYER_KHRONOS_validation")) {
+		instance->mDebugMessenger = vk::raii::DebugUtilsMessengerEXT(instance->mInstance, vk::DebugUtilsMessengerCreateInfoEXT{
+			.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
+			.messageType     = (vk::DebugUtilsMessageTypeFlagsEXT)vk::FlagTraits<vk::DebugUtilsMessageTypeFlagBitsEXT>::allFlags,
 			.pfnUserCallback = DebugCallback
 		});
 	}
+
+	return instance;
 }
 
 }

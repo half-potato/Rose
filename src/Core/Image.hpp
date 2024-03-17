@@ -383,8 +383,8 @@ private:
 	std::vector<std::vector<ResourceState>> mSubresourceStates = {}; // mSubresourceStates[arrayLayer][mipLevel]
 
 public:
-	Image(Device& device, const ImageInfo& info, const vk::MemoryPropertyFlags memoryFlags = vk::MemoryPropertyFlagBits::eDeviceLocal, const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
-	Image(const vk::Image image, const ImageInfo& info);
+	static ref<Image> Create(Device& device, const ImageInfo& info, const vk::MemoryPropertyFlags memoryFlags = vk::MemoryPropertyFlagBits::eDeviceLocal, const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
+	static ref<Image> Create(const vk::Image image, const ImageInfo& info);
 	~Image();
 
 	inline       vk::Image& operator*()        { return mImage; }
@@ -469,6 +469,8 @@ struct ImageView {
 	vk::ImageViewType         mType = vk::ImageViewType::e2D;
 	vk::ComponentMapping      mComponentMapping = {};
 
+	static ImageView Create(const Device& device, const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
+
 	inline       vk::ImageView& operator*()        { return mView; }
 	inline const vk::ImageView& operator*() const  { return mView; }
 	inline       vk::ImageView* operator->()       { return &mView; }
@@ -492,8 +494,6 @@ struct ImageView {
 	inline std::vector<vk::ImageMemoryBarrier2> SetState(const Image::ResourceState& newState) const {
 		return mImage->SetSubresourceState(mSubresource, newState);
 	}
-
-	static ImageView Create(const Device& device, const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
 };
 
 }

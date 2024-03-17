@@ -67,7 +67,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 			FreeEXRErrorMessage(err);
 			throw std::runtime_error(std::string("Failure when loading image: ") + filename.string());
 		}
-		auto buf = CreateBuffer(device, std::span{ pixels, size_t(width)*size_t(height)*4 });
+		auto buf = Buffer::Create(device, std::span{ pixels, size_t(width)*size_t(height)*4 });
 		std::free(pixels);
 		return PixelData{buf, vk::Format::eR32G32B32A32Sfloat, vk::Extent3D(width,height,1)};
 	} else if (filename.extension() == ".dds") {
@@ -81,7 +81,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 
 		const DDSFile::ImageData* img = dds.GetImageData(0, 0);
 
-		auto buf = CreateBuffer(device, std::span{ (std::byte*)img->m_mem, img->m_memSlicePitch });
+		auto buf = Buffer::Create(device, std::span{ (std::byte*)img->m_mem, img->m_memSlicePitch });
 		return PixelData{buf, dxgiToVulkan(dds.GetFormat(), desiredChannels == 4), vk::Extent3D(dds.GetWidth(), dds.GetHeight(), dds.GetDepth())};
 	} else {
 		int x,y,channels;
@@ -120,7 +120,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 		std::cout << "Loaded " << filename << " (" << x << "x" << y << ")" << std::endl;
 		if (desiredChannels) channels = desiredChannels;
 
-		auto buf = CreateBuffer(device, std::span{ pixels, size_t(x)*size_t(y)*GetTexelSize(format) });
+		auto buf = Buffer::Create(device, std::span{ pixels, size_t(x)*size_t(y)*GetTexelSize(format) });
 		stbi_image_free(pixels);
 		return PixelData{buf, format, vk::Extent3D(x,y,1)};
 	}

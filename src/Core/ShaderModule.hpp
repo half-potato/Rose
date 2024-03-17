@@ -4,9 +4,11 @@
 #include <stacktrace>
 #endif
 
+#include <iostream>
 #include <source_location>
 
 #include "Device.hpp"
+#include "ParameterMap.hpp"
 
 namespace RoseEngine {
 
@@ -34,37 +36,39 @@ inline std::filesystem::path FindShaderPath(const std::string& name) {
 
 #endif
 
-using ShaderDefines = NameMap<std::string>;
-
 struct ShaderDescriptorBinding {
-	uint32_t setIndex = 0;
-	uint32_t bindingIndex = 0;
 	vk::DescriptorType descriptorType = {};
-	std::vector<uint32_t> arraySize = {};
-	uint32_t inputAttachmentIndex = {};
-	bool writable = false;
+	uint32_t           setIndex = 0;
+	uint32_t           bindingIndex = 0;
+	uint32_t           arraySize = 1;
+	uint32_t           inputAttachmentIndex = {};
+	bool               writable = false;
+
+	inline bool operator==(const ShaderDescriptorBinding& rhs) const {
+		return descriptorType == descriptorType
+			&& setIndex == setIndex
+			&& bindingIndex == bindingIndex
+			&& arraySize == arraySize
+			&& inputAttachmentIndex == inputAttachmentIndex
+			&& writable == writable;
+	}
+	inline bool operator!=(const ShaderDescriptorBinding& rhs) const { return !operator==(rhs); }
 };
 struct ShaderConstantBinding {
-	uint32_t offset = 0;
+	uint32_t offset = 0; // relative to parent
 	uint32_t typeSize = 0;
-	std::string parentDescriptor = {};
-};
-struct ShaderVariable {
-	uint32_t location = 0;
-	vk::Format format = {};
-	std::string semantic = {};
-	uint32_t semanticIndex = 0;
+	uint32_t setIndex = 0;
+	uint32_t bindingIndex = 0;
+	bool     pushConstant = false;
+
+	inline bool operator==(const ShaderConstantBinding& rhs) const {
+		return offset == offset && typeSize == typeSize && setIndex == rhs.setIndex && bindingIndex == rhs.bindingIndex && pushConstant == pushConstant;
+	}
+	inline bool operator!=(const ShaderConstantBinding& rhs) const { return !operator==(rhs); }
 };
 
-struct ShaderParameterBindings {
-	NameMap<ShaderDescriptorBinding> descriptors = {};
-	NameMap<ShaderConstantBinding>   uniforms = {};
-	NameMap<vk::DeviceSize>          uniformBufferSizes = {};
-	NameMap<ShaderConstantBinding>   pushConstants = {};
-	NameMap<ShaderVariable>          inputVariables = {};
-	NameMap<ShaderVariable>          outputVariables = {};
-	std::vector<std::string>         entryPointArguments = {};
-};
+using ShaderParameterBinding = ParameterMap<std::monostate, ShaderDescriptorBinding, ShaderConstantBinding>;
+using ShaderDefines = NameMap<std::string>;
 
 struct ShaderModule {
 	vk::raii::ShaderModule mModule = nullptr;
@@ -78,25 +82,11 @@ struct ShaderModule {
 	// Only valid for compute shaders
 	vk::Extent3D mWorkgroupSize = {};
 
-	ShaderParameterBindings mBindings;
+	std::vector<std::string> mEntryPointArguments = {};
+	NameMap<vk::DeviceSize>  mUniformBufferSizes = {};
+	ShaderParameterBinding   mRootBinding = {};
 
 public:
-	inline       vk::raii::ShaderModule& operator*()        { return mModule; }
-	inline const vk::raii::ShaderModule& operator*() const  { return mModule; }
-	inline       vk::raii::ShaderModule* operator->()       { return &mModule; }
-	inline const vk::raii::ShaderModule* operator->() const { return &mModule; }
-
-	inline vk::ShaderStageFlagBits Stage() const { return mStage; }
-	inline vk::Extent3D            WorkgroupSize() const { return mWorkgroupSize; }
-	inline const auto&             Bindings() const { return mBindings; }
-
-	inline bool IsStale() const {
-		for (const auto& dep : mSourceFiles)
-			if (std::filesystem::last_write_time(dep) > mCompileTime)
-				return true;
-		return false;
-	}
-
 	static ref<ShaderModule> Create(
 		const Device& device,
 		const std::filesystem::path& sourceFile,
@@ -104,6 +94,23 @@ public:
 		const std::string& profile = "sm_6_7",
 		const ShaderDefines& defines = {},
 		const std::vector<std::string>& compileArgs = {});
+
+	inline       vk::raii::ShaderModule& operator*()        { return mModule; }
+	inline const vk::raii::ShaderModule& operator*() const  { return mModule; }
+	inline       vk::raii::ShaderModule* operator->()       { return &mModule; }
+	inline const vk::raii::ShaderModule* operator->() const { return &mModule; }
+
+	inline vk::ShaderStageFlagBits       Stage() const { return mStage; }
+	inline vk::Extent3D                  WorkgroupSize() const { return mWorkgroupSize; }
+	inline const ShaderParameterBinding& RootBinding() const { return mRootBinding; }
+	inline const auto&                   EntryPointArguments() const { return mEntryPointArguments; }
+
+	inline bool IsStale() const {
+		for (const auto& dep : mSourceFiles)
+			if (std::filesystem::last_write_time(dep) > mCompileTime)
+				return true;
+		return false;
+	}
 };
 
 }

@@ -44,10 +44,9 @@ private:
 	void AllocateDescriptorPool();
 
 public:
-	Device() = default;
-	Device(Device&&) = default;
-	Device(const Instance& instance, const vk::raii::PhysicalDevice physicalDevice, const std::vector<std::string>& deviceExtensions = {});
 	~Device();
+
+	static ref<Device> Create(const Instance& instance, const vk::raii::PhysicalDevice physicalDevice, const std::vector<std::string>& deviceExtensions = {});
 
 	inline       vk::raii::Device& operator*()        { return mDevice; }
 	inline const vk::raii::Device& operator*() const  { return mDevice; }

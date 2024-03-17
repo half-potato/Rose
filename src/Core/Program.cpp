@@ -11,50 +11,141 @@ ref<Program> Program::Create(const Device& device, const std::filesystem::path& 
 	return program;
 }
 
-void Program::WriteUniformBufferDescriptors(CommandContext& context, const DescriptorSets& descriptorSets) {
-	const auto& bindings = mPipeline->Layout()->Bindings();
-	if (bindings.uniforms.empty()) return;
+struct DescriptorSetWriter {
+	union DescriptorInfo {
+		vk::DescriptorBufferInfo buffer;
+		vk::DescriptorImageInfo image;
+		vk::WriteDescriptorSetAccelerationStructureKHR accelerationStructure;
+	};
+	std::vector<DescriptorInfo> descriptorInfos;
+	std::vector<vk::WriteDescriptorSet> writes;
 
-	// copy constants from mGlobalParameters to contiguous buffers
+	PairMap<std::vector<std::byte>, uint32_t, uint32_t> uniforms;
+	std::vector<std::pair<uint32_t, std::span<const std::byte, std::dynamic_extent>>> pushConstants;
 
-	NameMap<std::vector<std::byte>> uniformBufferData;
-	for (const auto&[name, size] : bindings.uniformBufferSizes)
-		uniformBufferData[name].resize(size);
+	std::vector<vk::DescriptorSet> descriptorSets;
 
-	for (const auto& [name, binding] : bindings.uniforms) {
-		auto it = mGlobalParameters.find(name);
-		if (it == mGlobalParameters.end()) {
-			std::cout << "Warning: unspecified uniform: " << name << std::endl;
-			continue;
-		}
-
-		size_t offset = binding.offset;
-		for (uint32_t i = 0; i < it->second.size(); i++) {
-			if (const auto* param = std::get_if<ConstantParameter>(&it->second[i])) {
-				std::byte* dst = uniformBufferData.at(binding.parentDescriptor).data() + offset;
-				std::ranges::copy(*param, dst);
-				offset += param->size();
-			} else {
-				std::cout << "Warning: invalid parameter type: " << name << std::endl;
-			}
-		}
-		if (binding.typeSize != offset)
-			std::cout << "Warning: invalid uniform size: " << name << std::endl;
+	vk::WriteDescriptorSet WriteDescriptor(const ShaderDescriptorBinding& binding, uint32_t arrayIndex) {
+		return vk::WriteDescriptorSet{
+			.dstSet = descriptorSets[binding.setIndex],
+			.dstBinding = binding.bindingIndex,
+			.dstArrayElement = arrayIndex,
+			.descriptorCount = 1,
+			.descriptorType = binding.descriptorType };
 	}
+	void WriteBuffer(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, const vk::DescriptorBufferInfo& data) {
+		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex));
+		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
+		info.buffer = data;
+		w.setBufferInfo(info.buffer);
+	}
+	void WriteImage(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, const vk::DescriptorImageInfo& data) {
+		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex));
+		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
+		info.image = data;
+		w.setImageInfo(info.image);
+	}
+	void WriteAccelerationStructure(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, const vk::WriteDescriptorSetAccelerationStructureKHR& data) {
+		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex));
+		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
+		info.accelerationStructure = data;
+		w.setPNext(&info);
+	}
+
+	void Write(CommandContext& context, const ShaderParameter& parameter, const ShaderParameterBinding& binding, uint32_t constantOffset = 0) {
+		for (const auto&[name, param] : parameter) {
+			uint32_t arrayIndex = 0;
+
+			bool isArrayElement = std::ranges::all_of(name, [](char c){ return std::isdigit(c); });
+			if (isArrayElement) {
+				arrayIndex = std::stoi(name);
+				if (const auto* desc = binding.get_if<ShaderDescriptorBinding>()) {
+					if (arrayIndex >= desc->arraySize) {
+						std::cout << "Warning array index " << arrayIndex << " which is out of bounds for array size " << desc->arraySize << std::endl;
+					}
+				}
+			}
+			const auto& paramBinding = isArrayElement ? binding : binding.at(name);
+
+			uint32_t offset = constantOffset;
+
+			if (param.holds_alternative<std::monostate>()) {
+
+			} else if (const auto* v = param.get_if<ConstantParameter>()) {
+				if (const auto* constantBinding = paramBinding.get_if<ShaderConstantBinding>()) {
+					if (v->size() != constantBinding->typeSize)
+						std::cout << "Warning: Binding constant parameter of size " << v->size() << " to binding of size " << constantBinding->typeSize << std::endl;
+
+					offset += constantBinding->offset;
+
+					if (constantBinding->pushConstant) {
+						pushConstants.emplace_back(offset, *v);
+					} else {
+						auto& u = uniforms[{constantBinding->setIndex, constantBinding->bindingIndex}];
+						if (offset + v->size() > u.size())
+							u.resize(offset + v->size());
+						std::memcpy(u.data() + offset, v->data(), v->size());
+					}
+				} else {
+					std::cout << "Warning: Attempting to bind constant parameter to non-constant binding" << std::endl;
+				}
+			} else {
+				if (const auto* descriptorBinding = paramBinding.get_if<ShaderDescriptorBinding>()) {
+					if (const auto* v = param.get_if<BufferParameter>()) {
+						const auto& buffer = *v;
+						if (buffer.empty()) continue;
+						WriteBuffer(*descriptorBinding, arrayIndex, vk::DescriptorBufferInfo{
+							.buffer = **buffer.mBuffer,
+							.offset = buffer.mOffset,
+							.range  = buffer.size() });
+					} else if (const auto* v = param.get_if<ImageParameter>()) {
+						const auto& [image, layout, accessFlags, sampler] = *v;
+						if (!image && !sampler) continue;
+						WriteImage(*descriptorBinding, arrayIndex, vk::DescriptorImageInfo{
+							.sampler     = sampler ? **sampler : nullptr,
+							.imageView   = image   ? *image    : nullptr,
+							.imageLayout = layout });
+					} else if (const auto* v = param.get_if<AccelerationStructureParameter>()) {
+						const auto& as = *v;
+						if (!as) continue;
+						WriteAccelerationStructure(*descriptorBinding, arrayIndex, vk::WriteDescriptorSetAccelerationStructureKHR{}.setAccelerationStructures(**as));
+					}
+				} else {
+					std::cout << "Warning: Attempting to bind descriptor parameter to non-descriptor binding" << std::endl;
+				}
+			}
+
+			Write(context, param, paramBinding, offset);
+		}
+	}
+};
+
+size_t GetDescriptorCount(const ShaderParameter& param) {
+	size_t count = 1;
+	for (const auto&[name, p] : param)
+		count += GetDescriptorCount(p);
+	return count;
+}
+
+void Program::BindParameters(CommandContext& context) {
+	auto descriptorSets = GetDescriptorSets(context);
+
+	DescriptorSetWriter w;
+	for (const auto& s : *descriptorSets)
+		w.descriptorSets.emplace_back(*s);
+	w.descriptorInfos.reserve(GetDescriptorCount(mRootParameter));
+	w.Write(context, mRootParameter, mPipeline->Layout()->RootBinding());
 
 	// upload uniforms and write uniform buffer descriptors
 
-	std::vector<vk::DescriptorBufferInfo> descriptorInfos;
-	std::vector<vk::WriteDescriptorSet> writes;
-	descriptorInfos.reserve(uniformBufferData.size());
-	writes.reserve(uniformBufferData.size());
+	for (const auto&[setBinding, data] : w.uniforms) {
+		const auto [setIndex,bindingIndex] = setBinding;
 
-	for (const auto&[name, data] : uniformBufferData) {
-		auto hostBuffer = mCachedUniformBuffers[name + "/Host"].pop_or_create(context.GetDevice(), [&](){ return CreateBuffer(
-			context.GetDevice(),
-			data); });
+		const std::string id = "Uniforms" + std::to_string(setIndex) + "." + std::to_string(bindingIndex);
 
-		auto buffer = mCachedUniformBuffers[name].pop_or_create(context.GetDevice(), [&](){ return CreateBuffer(
+		auto hostBuffer = mCachedUniformBuffers["Host" + id].pop_or_create(context.GetDevice(), [&](){ return Buffer::Create(context.GetDevice(), data); });
+
+		auto buffer = mCachedUniformBuffers[id].pop_or_create(context.GetDevice(), [&](){ return Buffer::Create(
 			context.GetDevice(),
 			data.size(),
 			vk::BufferUsageFlagBits::eUniformBuffer|vk::BufferUsageFlagBits::eTransferDst,
@@ -63,134 +154,28 @@ void Program::WriteUniformBufferDescriptors(CommandContext& context, const Descr
 
 		context.Copy(hostBuffer, buffer);
 
-		vk::DescriptorBufferInfo& info = descriptorInfos.emplace_back(vk::DescriptorBufferInfo{
-			.buffer = **buffer.mBuffer,
-			.offset = buffer.mOffset,
-			.range  = buffer.size() });
-
-		const auto& binding = bindings.descriptors.at(name);
-		vk::WriteDescriptorSet& w = writes.emplace_back(vk::WriteDescriptorSet{
-			.dstSet = *descriptorSets[binding.setIndex],
-			.dstBinding = binding.bindingIndex,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = vk::DescriptorType::eUniformBuffer });
-
-		w.setBufferInfo(info);
+		w.WriteBuffer(
+			ShaderDescriptorBinding{
+				.descriptorType = vk::DescriptorType::eUniformBuffer,
+				.setIndex = setIndex,
+				.bindingIndex = bindingIndex },
+			0,
+			vk::DescriptorBufferInfo{
+				.buffer = **buffer.mBuffer,
+				.offset = buffer.mOffset,
+				.range  = buffer.size() });
 	}
 
-	if (!writes.empty()) context.GetDevice()->updateDescriptorSets(writes, {});
-}
+	if (!w.writes.empty())
+		context.GetDevice()->updateDescriptorSets(w.writes, {});
 
-void Program::WriteDescriptors(const Device& device, const DescriptorSets& descriptorSets) {
-	union DescriptorInfo {
-		vk::DescriptorBufferInfo buffer;
-		vk::DescriptorImageInfo image;
-		vk::WriteDescriptorSetAccelerationStructureKHR accelerationStructure;
-	};
-	std::vector<DescriptorInfo> descriptorInfos;
-	std::vector<vk::WriteDescriptorSet> writes;
-	descriptorInfos.reserve(mGlobalParameters.size());
-	writes.reserve(mGlobalParameters.size());
-
-	const auto& bindings = mPipeline->Layout()->Bindings();
-
-	for (const auto& [name, binding] : bindings.descriptors) {
-		auto it = mGlobalParameters.find(name);
-		if (it == mGlobalParameters.end()) {
-			std::cout << "Warning: unspecified descriptor " << name << std::endl;
-			continue;
-		}
-		const auto& paramArray = it->second;
-
-		size_t arraySize = 1;
-		for (auto s : binding.arraySize) arraySize *= s;
-		if (paramArray.size() > arraySize) {
-			std::cout << "Warning: binding array of size " << paramArray.size() << " to descriptor array of size " << arraySize << std::endl;
-		}
-
-		for (uint32_t arrayIndex = 0; arrayIndex < std::min(arraySize, paramArray.size()); arrayIndex++) {
-			const auto& param = paramArray[arrayIndex];
-
-			// write descriptor
-
-			vk::WriteDescriptorSet& w = writes.emplace_back(vk::WriteDescriptorSet{
-				.dstSet = *descriptorSets[binding.setIndex],
-				.dstBinding = binding.bindingIndex,
-				.dstArrayElement = arrayIndex,
-				.descriptorCount = 1,
-				.descriptorType = binding.descriptorType
-			});
-			DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
-
-			if (const auto* v = std::get_if<BufferParameter>(&param)) {
-				const auto& buffer = *v;
-				if (buffer.empty()) continue;
-				info.buffer = vk::DescriptorBufferInfo{
-					.buffer = **buffer.mBuffer,
-					.offset = buffer.mOffset,
-					.range  = buffer.size() };
-				w.setBufferInfo(info.buffer);
-			} else if (const auto* v = std::get_if<ImageParameter>(&param)) {
-				const auto& [image, layout, accessFlags, sampler] = *v;
-				if (!image && !sampler) continue;
-				info.image = vk::DescriptorImageInfo{
-					.sampler     = sampler ? **sampler : nullptr,
-					.imageView   = image ? *image : nullptr,
-					.imageLayout = layout };
-				w.setImageInfo(info.image);
-			} else if (const auto* v = std::get_if<AccelerationStructureParameter>(&param)) {
-				const auto& as = *v;
-				if (!as) continue;
-				info.accelerationStructure = vk::WriteDescriptorSetAccelerationStructureKHR{}
-					.setAccelerationStructures(**as);
-				w.pNext = &info;
-			}
-		}
-	}
-
-	if (!writes.empty()) device->updateDescriptorSets(writes, {});
-}
-
-void Program::Dispatch(CommandContext& context, const vk::Extent3D threadCount) {
-	mGlobalParameters.AddParameters(mGlobalParameters);
-
-	auto descriptorSets = GetDescriptorSets(context);
-
-	WriteDescriptors(context.GetDevice(), *descriptorSets);
-	WriteUniformBufferDescriptors(context, *descriptorSets);
-
-	context.ExecuteBarriers();
-
-	context->bindPipeline(vk::PipelineBindPoint::eCompute, ***mPipeline);
+	for (const auto&[offset, data] : w.pushConstants)
+		context->pushConstants<std::byte>(***mPipeline->Layout(), vk::ShaderStageFlagBits::eCompute, offset, data);
 
 	std::vector<vk::DescriptorSet> vkDescriptorSets;
 	for (const auto& ds : *descriptorSets)
 		vkDescriptorSets.emplace_back(*ds);
 	context->bindDescriptorSets(vk::PipelineBindPoint::eCompute, ***mPipeline->Layout(), 0, vkDescriptorSets, {});
-
-	for (const auto& [name, binding] : mPipeline->Layout()->Bindings().pushConstants) {
-		auto it = mGlobalParameters.find(name);
-		if (it == mGlobalParameters.end()) {
-			std::cout << "Warning: unspecified push constant: " << name << std::endl;
-			continue;
-		}
-
-		size_t offset = binding.offset;
-		for (uint32_t i = 0; i < it->second.size(); i++) {
-			if (const auto* param = std::get_if<ConstantParameter>(&it->second[i])) {
-				context->pushConstants<std::byte>(***mPipeline->Layout(), vk::ShaderStageFlagBits::eCompute, offset, *param);
-				offset += param->size();
-			} else {
-				std::cout << "Warning: invalid parameter type: " << name << std::endl;
-			}
-		}
-		if (binding.typeSize != offset)
-			std::cout << "Warning: invalid push constant size: " << name << std::endl;
-	}
-
-	auto dim = GetDispatchDim(mPipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->mWorkgroupSize, threadCount);
-	context->dispatch(dim.width, dim.height, dim.depth);
 }
 
 }

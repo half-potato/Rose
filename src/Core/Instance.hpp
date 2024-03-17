@@ -18,9 +18,7 @@ private:
 	vk::raii::DebugUtilsMessengerEXT mDebugMessenger = nullptr;
 
 public:
-	Instance() = default;
-	Instance(Instance&&) = default;
-	Instance(const std::vector<std::string>& extensions = {}, const std::vector<std::string>& layers = {});
+	static ref<Instance> Create(const std::vector<std::string>& extensions = {}, const std::vector<std::string>& layers = {});
 
 	inline       vk::raii::Instance& operator*()        { return mInstance; }
 	inline const vk::raii::Instance& operator*() const  { return mInstance; }

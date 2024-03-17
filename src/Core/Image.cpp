@@ -17,7 +17,7 @@ std::vector<std::vector<Image::ResourceState>> CreateSubresourceStates(const Ima
 				.queueFamily = info.queueFamilies.empty() ? VK_QUEUE_FAMILY_IGNORED : info.queueFamilies.front() }));
 }
 
-Image::Image(Device& device, const ImageInfo& info, const vk::MemoryPropertyFlags memoryFlags, const VmaAllocationCreateFlags allocationFlags) : mInfo(info) {
+ref<Image> Image::Create(Device& device, const ImageInfo& info, const vk::MemoryPropertyFlags memoryFlags, const VmaAllocationCreateFlags allocationFlags) {
 	VmaAllocationCreateInfo allocationCreateInfo {
 		.flags = allocationFlags,
 		.usage = VMA_MEMORY_USAGE_AUTO,
@@ -28,31 +28,42 @@ Image::Image(Device& device, const ImageInfo& info, const vk::MemoryPropertyFlag
 		.priority = 0 };
 
 	vk::ImageCreateInfo createInfo{
-		.flags       = mInfo.createFlags,
-		.imageType   = mInfo.type,
-		.format      = mInfo.format,
-		.extent      = mInfo.extent,
-		.mipLevels   = mInfo.mipLevels,
-		.arrayLayers = mInfo.arrayLayers,
-		.samples     = mInfo.samples,
-		.tiling      = mInfo.tiling,
-		.usage       = mInfo.usage,
-		.sharingMode = mInfo.sharingMode,
+		.flags       = info.createFlags,
+		.imageType   = info.type,
+		.format      = info.format,
+		.extent      = info.extent,
+		.mipLevels   = info.mipLevels,
+		.arrayLayers = info.arrayLayers,
+		.samples     = info.samples,
+		.tiling      = info.tiling,
+		.usage       = info.usage,
+		.sharingMode = info.sharingMode,
 		.initialLayout = vk::ImageLayout::eUndefined };
-	createInfo.setQueueFamilyIndices(mInfo.queueFamilies);
+	createInfo.setQueueFamilyIndices(info.queueFamilies);
 
-	vk::Result result = (vk::Result)vmaCreateImage(device.MemoryAllocator(), &(const VkImageCreateInfo&)createInfo, &allocationCreateInfo, &(VkImage&)mImage, &mAllocation, nullptr);
-	if (result != vk::Result::eSuccess) {
-		mImage = nullptr;
-		mAllocation = nullptr;
-		mMemoryAllocator = nullptr;
-		return;
-	}
+	VkImage vkimg;
+	VmaAllocation alloc;
+	vk::Result result = (vk::Result)vmaCreateImage(device.MemoryAllocator(), &(const VkImageCreateInfo&)createInfo, &allocationCreateInfo, &vkimg, &alloc, nullptr);
+	if (result != vk::Result::eSuccess)
+		return nullptr;
 
-	mMemoryAllocator = device.MemoryAllocator();
-	mSubresourceStates = CreateSubresourceStates(mInfo);
+	auto image = make_ref<Image>();
+	image->mImage = vkimg;
+	image->mMemoryAllocator = device.MemoryAllocator();
+	image->mAllocation = alloc;
+	image->mInfo = info;
+	image->mSubresourceStates = CreateSubresourceStates(info);
+	return image;
 }
-Image::Image(const vk::Image image, const ImageInfo& info) : mImage(image), mInfo(info), mSubresourceStates(CreateSubresourceStates(mInfo)) {}
+ref<Image> Image::Create(const vk::Image vkimage, const ImageInfo& info) {
+	auto image = make_ref<Image>();
+	image->mImage = vkimage;
+	image->mMemoryAllocator = nullptr;
+	image->mAllocation = nullptr;
+	image->mInfo = info;
+	image->mSubresourceStates = CreateSubresourceStates(info);
+	return image;
+}
 Image::~Image() {
 	if (mMemoryAllocator && mImage && mAllocation) {
 		vmaDestroyImage(mMemoryAllocator, mImage, mAllocation);

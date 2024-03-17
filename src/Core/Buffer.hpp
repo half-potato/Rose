@@ -5,6 +5,11 @@
 
 namespace RoseEngine {
 
+template<typename T>
+struct BufferRange;
+
+using BufferView = BufferRange<std::byte>;
+
 class Buffer {
 public:
 	struct ResourceState {
@@ -26,7 +31,28 @@ private:
 	PairMap<ResourceState, vk::DeviceSize, vk::DeviceSize> mState;
 
 public:
-	Buffer(const Device& device, const vk::BufferCreateInfo& createInfo, const VmaAllocationCreateInfo& allocationInfo);
+	static ref<Buffer> Create(
+		const Device&                  device,
+		const vk::BufferCreateInfo&    createInfo,
+		const VmaAllocationCreateInfo& allocationInfo);
+	static BufferView Create(
+		const Device&                  device,
+		const vk::BufferCreateInfo&    createInfo,
+		const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eDeviceLocal,
+		const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
+	static BufferView Create(
+		const Device&                  device,
+		const vk::DeviceSize           size,
+		const vk::BufferUsageFlags     usage           = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst,
+		const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eDeviceLocal,
+		const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
+	template<std::ranges::range R>
+	static BufferRange<std::ranges::range_value_t<R>> Create(
+		const Device& device,
+		const R& data,
+		const vk::BufferUsageFlags     usage           = vk::BufferUsageFlagBits::eTransferSrc,
+		const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+		const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
 	~Buffer();
 
 	inline       vk::Buffer& operator*()        { return mBuffer; }
@@ -106,61 +132,18 @@ struct BufferRange {
 	}
 };
 
-using BufferView = BufferRange<std::byte>;
-
-inline BufferView CreateBuffer(
-	const Device& device,
-	const vk::BufferCreateInfo&    createInfo,
-	const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eDeviceLocal,
-	const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT) {
-	auto buf = make_ref<Buffer>(
-		device,
-		createInfo,
-		VmaAllocationCreateInfo{
-			.flags = allocationFlags,
-			.usage = VMA_MEMORY_USAGE_AUTO,
-			.requiredFlags = (VkMemoryPropertyFlags)memoryFlags,
-			.memoryTypeBits = 0,
-			.pool = VK_NULL_HANDLE,
-			.pUserData = VK_NULL_HANDLE,
-			.priority = 0 });
-	return { buf, 0, createInfo.size };
-}
-
-inline BufferView CreateBuffer(
-	const Device& device,
-	const vk::DeviceSize size,
-	const vk::BufferUsageFlags     usage           = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst,
-	const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eDeviceLocal,
-	const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT) {
-	auto buf = make_ref<Buffer>(
-		device,
-		vk::BufferCreateInfo{
-			.size = size,
-			.usage = usage },
-		VmaAllocationCreateInfo{
-			.flags = allocationFlags,
-			.usage = VMA_MEMORY_USAGE_AUTO,
-			.requiredFlags = (VkMemoryPropertyFlags)memoryFlags,
-			.memoryTypeBits = 0,
-			.pool = VK_NULL_HANDLE,
-			.pUserData = VK_NULL_HANDLE,
-			.priority = 0 });
-	return { buf, 0, size };
-}
-
 template<std::ranges::range R>
-inline BufferRange<std::ranges::range_value_t<R>> CreateBuffer(
-	const Device& device,
-	const R& data,
-	const vk::BufferUsageFlags     usage           = vk::BufferUsageFlagBits::eTransferSrc,
-	const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-	const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT) {
+inline BufferRange<std::ranges::range_value_t<R>> Buffer::Create(
+	const Device&                  device,
+	const R&                       data,
+	const vk::BufferUsageFlags     usage,
+	const vk::MemoryPropertyFlags  memoryFlags,
+	const VmaAllocationCreateFlags allocationFlags ) {
 
 	using T = std::ranges::range_value_t<R>;
 	const size_t size = std::ranges::size(data);
 
-	BufferView buf = CreateBuffer(
+	BufferView buf = Buffer::Create(
 		device,
 		size * sizeof(T),
 		usage,

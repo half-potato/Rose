@@ -3,43 +3,73 @@
 #include <queue>
 
 #include "Pipeline.hpp"
-#include "ShaderParameters.hpp"
+#include "TransientResourceCache.hpp"
+#include "Buffer.hpp"
+#include "Image.hpp"
 #include "CommandContext.hpp"
 
 namespace RoseEngine {
 
-template<typename T>
-struct ResourceCache  {
-	std::queue<std::pair<T, uint64_t>> mResources;
+using BufferParameter = BufferView;
+struct ImageParameter {
+	ImageView              image;
+	vk::ImageLayout        imageLayout;
+	vk::AccessFlags        imageAccess;
+	ref<vk::raii::Sampler> sampler;
+};
+using AccelerationStructureParameter = ref<vk::raii::AccelerationStructureKHR>;
 
-	inline void push(T&& resource, uint64_t counterValue)      { mResources.push(std::make_pair(resource, counterValue)); }
-	inline void push(const T& resource, uint64_t counterValue) { mResources.push(std::make_pair(resource, counterValue)); }
-
-	inline T pop() {
-		T tmp = std::move(mResources.front().first);
-		mResources.pop();
-		return tmp;
+// represents a uniform or push constant
+class ConstantParameter : public std::vector<std::byte> {
+public:
+	template<typename T>
+	inline ConstantParameter(const T& value) {
+		resize(sizeof(value));
+		*reinterpret_cast<T*>(data()) = value;
 	}
 
-	inline T pop_or_create(const Device& device, auto ctor) {
-		T tmp = empty(device) ? ctor() : pop();
-		push(tmp, device.NextTimelineCounterValue());
-		return tmp;
+	ConstantParameter() = default;
+	ConstantParameter(ConstantParameter&&) = default;
+	ConstantParameter(const ConstantParameter&) = default;
+	ConstantParameter& operator=(ConstantParameter&&) = default;
+	ConstantParameter& operator=(const ConstantParameter&) = default;
+
+	template<typename T>
+	inline T& get() {
+		if (empty())
+			resize(sizeof(T));
+		return *reinterpret_cast<T*>(data());
 	}
 
-	inline bool empty(const Device& device) {
-		if (mResources.empty()) return true;
-		return mResources.front().second < device.TimelineSemaphore().getCounterValue();
+	template<typename T>
+	inline const T& get() const {
+		return *reinterpret_cast<const T*>(data());
+	}
+
+	template<typename T>
+	inline T& operator=(const T& value) {
+		resize(sizeof(value));
+		return *reinterpret_cast<T*>(data()) = value;
 	}
 };
+
+using ShaderParameter = ParameterMap<
+	std::monostate,
+	ConstantParameter,
+	BufferParameter,
+	ImageParameter,
+	AccelerationStructureParameter >;
+
+template<typename T>
+concept shader_parameter = one_of<T, ShaderParameter, ConstantParameter, BufferParameter, ImageParameter, AccelerationStructureParameter>;
 
 class Program {
 private:
 	ref<const Pipeline> mPipeline = {};
-	ShaderParameters mGlobalParameters;
+	ShaderParameter mRootParameter;
 
-	ResourceCache<ref<DescriptorSets>> mCachedDescriptorSets;
-	NameMap<ResourceCache<BufferView>> mCachedUniformBuffers;
+	TransientResourceCache<ref<DescriptorSets>> mCachedDescriptorSets;
+	NameMap<TransientResourceCache<BufferView>> mCachedUniformBuffers;
 
 	inline ref<DescriptorSets> GetDescriptorSets(const CommandContext& context) {
 		return mCachedDescriptorSets.pop_or_create(context.GetDevice(), [&]() {
@@ -50,51 +80,60 @@ private:
 		});
 	}
 
-	void WriteDescriptors(const Device& device, const DescriptorSets& descriptorSets);
-	void WriteUniformBufferDescriptors(CommandContext& context, const DescriptorSets& descriptorSets);
-
 public:
-	inline ShaderParameters& GlobalParameters() { return mGlobalParameters; }
-	inline const ShaderParameters& GlobalParameters() const { return mGlobalParameters; }
+	static ref<Program> Create(const Device& device, const std::filesystem::path& sourceFile, const std::string& entryPoint = "main");
 
-	inline auto& Parameter(const std::string& name) { return mGlobalParameters[name]; }
-	inline const auto& Parameter(const std::string& name) const { return mGlobalParameters.at(name); }
+	inline ShaderParameter&       RootParameter() { return mRootParameter; }
+	inline const ShaderParameter& RootParameter() const { return mRootParameter; }
 
-	template<std::convertible_to<ShaderParameterValue> ... Args>
-	inline void SetEntryPointArguments(Args&&... entryPointArgs) {
-		const auto& shader = *mPipeline->GetShader(vk::ShaderStageFlagBits::eCompute);
-		const auto& bindings = shader.Bindings();
-		if (sizeof...(entryPointArgs) != bindings.entryPointArguments.size())
-			throw std::logic_error("Expected " + std::to_string(bindings.entryPointArguments.size()) + " arguments, but got " + std::to_string(sizeof...(entryPointArgs)));
+	template<std::convertible_to<ShaderParameter> ... Args>
+	inline void SetEntryPointParameters(Args&&... entryPointArgs) {
+		const auto& argBindings = mPipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->EntryPointArguments();
+		if (sizeof...(entryPointArgs) != argBindings.size())
+			throw std::logic_error("Expected " + std::to_string(argBindings.size()) + " arguments, but got " + std::to_string(sizeof...(entryPointArgs)));
 
 		size_t i = 0;
-		for (const ShaderParameterValue arg : { ShaderParameterValue(entryPointArgs)... })
-			mGlobalParameters[bindings.entryPointArguments[i++]] = arg;
+		for (const ShaderParameter arg : { ShaderParameter(entryPointArgs)... })
+			mRootParameter[argBindings[i++]] = arg;
 	}
 
-	void Dispatch(CommandContext& context, const vk::Extent3D threadCount);
+	void BindParameters(CommandContext& context);
 
-	template<std::convertible_to<ShaderParameterValue> ... Args>
+	void Dispatch(CommandContext& context, const vk::Extent3D threadCount) {
+		context->bindPipeline(vk::PipelineBindPoint::eCompute, ***mPipeline);
+
+		BindParameters(context);
+
+		context.ExecuteBarriers();
+
+		auto dim = GetDispatchDim(mPipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->mWorkgroupSize, threadCount);
+		context->dispatch(dim.width, dim.height, dim.depth);
+	}
+
+	template<std::convertible_to<ShaderParameter> ... Args>
 	inline void Dispatch(CommandContext& context, uint32_t threadCount, Args&&... entryPointArgs) {
-		SetEntryPointArguments(std::forward<Args>(entryPointArgs)...);
+		if constexpr(sizeof...(entryPointArgs) > 0)
+			SetEntryPointParameters(std::forward<Args>(entryPointArgs)...);
 		Dispatch(context, vk::Extent3D{ threadCount, 1, 1 });
 	}
 
-	template<std::convertible_to<ShaderParameterValue> ... Args>
+	template<std::convertible_to<ShaderParameter> ... Args>
 	inline void Dispatch(CommandContext& context, const vk::Extent2D threadCount, Args&&... entryPointArgs) {
-		SetEntryPointArguments(std::forward<Args>(entryPointArgs)...);
+		if constexpr(sizeof...(entryPointArgs) > 0)
+			SetEntryPointParameters(std::forward<Args>(entryPointArgs)...);
 		Dispatch(context, vk::Extent3D{ threadCount.width, threadCount.height, 1 });
 	}
 
-	template<std::convertible_to<ShaderParameterValue> ... Args>
+	template<std::convertible_to<ShaderParameter> ... Args>
 	inline void Dispatch(CommandContext& context, const vk::Extent3D threadCount, Args&&... entryPointArgs) {
-		SetEntryPointArguments(std::forward<Args>(entryPointArgs)...);
+		if constexpr(sizeof...(entryPointArgs) > 0)
+			SetEntryPointParameters(std::forward<Args>(entryPointArgs)...);
 		Dispatch(context, threadCount);
 	}
 
-	static ref<Program> Create(const Device& device, const std::filesystem::path& sourceFile, const std::string& entryPoint = "main");
+
+	inline ShaderParameter& operator[](const std::string& name) { return mRootParameter[name]; }
+	template<typename... Args> inline void operator()(CommandContext& context, Args&&...args) { Dispatch(context, std::forward<Args>(args)...); }
 };
-
-
 
 }
