@@ -12,6 +12,8 @@
 
 namespace RoseEngine {
 
+#define FindShaderPath(name) (std::filesystem::path(std::source_location::current().file_name()).parent_path() / name)
+
 inline std::vector<std::filesystem::path> GetDefaultSearchPaths() {
 	const char* file = std::source_location::current().file_name();
 	auto core = std::filesystem::path( file ).parent_path();
@@ -21,20 +23,6 @@ inline std::vector<std::filesystem::path> GetDefaultSearchPaths() {
 		src.parent_path() / "thirdparty"
 	};
 }
-
-#ifdef __GNUC__
-
-#define FindShaderPath(name) (std::filesystem::path(std::source_location::current().file_name()).parent_path() / name)
-
-#else
-
-inline std::filesystem::path FindShaderPath(const std::string& name) {
-	// search in the folder of the caller's source file
-	const std::string& callerSrc = std::stacktrace::current()[1].source_file();
-	return std::filesystem::path(callerSrc).parent_path() / name;
-}
-
-#endif
 
 struct ShaderDescriptorBinding {
 	vk::DescriptorType descriptorType = {};

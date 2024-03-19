@@ -31,7 +31,7 @@ ref<Image> Image::Create(Device& device, const ImageInfo& info, const vk::Memory
 		.flags       = info.createFlags,
 		.imageType   = info.type,
 		.format      = info.format,
-		.extent      = info.extent,
+		.extent      = vk::Extent3D{info.extent.x, info.extent.y, info.extent.z},
 		.mipLevels   = info.mipLevels,
 		.arrayLayers = info.arrayLayers,
 		.samples     = info.samples,

@@ -69,7 +69,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 		}
 		auto buf = Buffer::Create(device, std::span{ pixels, size_t(width)*size_t(height)*4 });
 		std::free(pixels);
-		return PixelData{buf, vk::Format::eR32G32B32A32Sfloat, vk::Extent3D(width,height,1)};
+		return PixelData{buf, vk::Format::eR32G32B32A32Sfloat, uint3(width, height, 1)};
 	} else if (filename.extension() == ".dds") {
 		using namespace tinyddsloader;
 		DDSFile dds;
@@ -82,7 +82,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 		const DDSFile::ImageData* img = dds.GetImageData(0, 0);
 
 		auto buf = Buffer::Create(device, std::span{ (std::byte*)img->m_mem, img->m_memSlicePitch });
-		return PixelData{buf, dxgiToVulkan(dds.GetFormat(), desiredChannels == 4), vk::Extent3D(dds.GetWidth(), dds.GetHeight(), dds.GetDepth())};
+		return PixelData{buf, dxgiToVulkan(dds.GetFormat(), desiredChannels == 4), uint3(dds.GetWidth(), dds.GetHeight(), dds.GetDepth())};
 	} else {
 		int x,y,channels;
 		stbi_info(filename.string().c_str(), &x, &y, &channels);
@@ -122,7 +122,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 
 		auto buf = Buffer::Create(device, std::span{ pixels, size_t(x)*size_t(y)*GetTexelSize(format) });
 		stbi_image_free(pixels);
-		return PixelData{buf, format, vk::Extent3D(x,y,1)};
+		return PixelData{buf, format, uint3(x,y,1)};
 	}
 }
 

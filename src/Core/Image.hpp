@@ -1,19 +1,17 @@
 #pragma once
 
-#include <vk_mem_alloc.h>
-
-#include "Hash.hpp"
+#include "MathTypes.hpp"
 #include "Buffer.hpp"
 
 namespace RoseEngine {
 
-inline uint32_t GetMaxMipLevels(const vk::Extent3D& extent) {
-	return 32 - (uint32_t)std::countl_zero(std::max(std::max(extent.width, extent.height), extent.depth));
+inline uint32_t GetMaxMipLevels(const uint3& extent) {
+	return 32 - (uint32_t)std::countl_zero(std::max(std::max(extent.x, extent.y), extent.z));
 }
 
-inline vk::Extent3D GetLevelExtent(const vk::Extent3D& extent, const uint32_t level = 0) {
+inline uint3 GetLevelExtent(const uint3& extent, const uint32_t level = 0) {
 	uint32_t s = 1 << level;
-	return vk::Extent3D(std::max(extent.width / s, 1u), std::max(extent.height / s, 1u), std::max(extent.depth / s, 1u));
+	return uint3(std::max(extent.x / s, 1u), std::max(extent.y / s, 1u), std::max(extent.z / s, 1u));
 }
 
 inline constexpr bool IsDepthStencil(vk::Format format) {
@@ -344,7 +342,7 @@ inline constexpr T GetChannelCount(const vk::Format format) {
 struct PixelData {
 	BufferView data     = {};
 	vk::Format format   = {};
-	vk::Extent3D extent = {};
+	uint3 extent = {};
 };
 PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, const bool srgb = true, int desiredChannels = 0);
 
@@ -352,7 +350,7 @@ struct ImageInfo {
 	vk::ImageCreateFlags    createFlags   = {};
 	vk::ImageType           type          = vk::ImageType::e2D;
 	vk::Format              format        = {};
-	vk::Extent3D            extent        = {};
+	uint3                   extent        = {};
 	uint32_t                mipLevels     = 1;
 	uint32_t                arrayLayers   = 1;
 	vk::SampleCountFlagBits samples       = vk::SampleCountFlagBits::e1;
@@ -481,7 +479,7 @@ struct ImageView {
 
 	inline operator bool() const { return mView && mImage; }
 
-	inline vk::Extent3D Extent(const uint32_t levelOffset = 0) const { return GetLevelExtent(mImage->Info().extent, mSubresource.baseMipLevel + levelOffset); }
+	inline uint3 Extent(const uint32_t levelOffset = 0) const { return GetLevelExtent(mImage->Info().extent, mSubresource.baseMipLevel + levelOffset); }
 
 	inline vk::ImageSubresourceLayers GetSubresourceLayer(const uint32_t levelOffset = 0) const {
 		return vk::ImageSubresourceLayers{

@@ -169,7 +169,7 @@ public:
 				.bufferImageHeight = 0,
 				.imageSubresource = dst.GetSubresourceLayer(dstLevel),
 				.imageOffset = { 0, 0, 0 },
-				.imageExtent = dst.Extent() });
+				.imageExtent = vk::Extent3D{dst.Extent().x, dst.Extent().y, dst.Extent().z} });
 	}
 
 	inline void Copy(const ref<Image>& src, const ref<Image>& dst, const vk::ArrayProxy<const vk::ImageCopy>& regions) {
@@ -214,7 +214,7 @@ public:
 			.srcOffset = vk::Offset3D{ 0, 0, 0 },
 			.dstSubresource = dst.GetSubresourceLayer(dstMip),
 			.dstOffset = vk::Offset3D{ 0, 0, 0 },
-			.extent = dst.Extent() });
+			.extent = vk::Extent3D{dst.Extent().x, dst.Extent().y, dst.Extent().z} });
 	}
 
 	inline void Blit(const ref<Image>& src, const ref<Image>& dst, const vk::ArrayProxy<const vk::ImageBlit>& regions, const vk::Filter filter) {
