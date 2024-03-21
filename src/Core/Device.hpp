@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_set>
 #include <vk_mem_alloc.h>
 
 #include "RoseEngine.hpp"
@@ -18,8 +17,8 @@ private:
 	vk::raii::PipelineCache  mPipelineCache = nullptr;
 	VmaAllocator             mMemoryAllocator = nullptr;
 
-	uint64_t                 mCurrentSemaphoreValue = 0;
 	vk::raii::Semaphore      mTimelineSemaphore = nullptr;
+	uint64_t                 mCurrentTimelineValue = 0;
 
 	vk::PhysicalDeviceFeatures mFeatures = {};
 	vk::StructureChain<
@@ -46,19 +45,24 @@ private:
 public:
 	~Device();
 
-	static ref<Device> Create(const Instance& instance, const vk::raii::PhysicalDevice physicalDevice, const std::vector<std::string>& deviceExtensions = {});
+	static ref<Device> Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const std::vector<std::string>& deviceExtensions = {});
 
 	inline       vk::raii::Device& operator*()        { return mDevice; }
 	inline const vk::raii::Device& operator*() const  { return mDevice; }
 	inline       vk::raii::Device* operator->()       { return &mDevice; }
 	inline const vk::raii::Device* operator->() const { return &mDevice; }
 
-	inline VmaAllocator MemoryAllocator() const { return mMemoryAllocator; }
-	inline const auto& PipelineCache() const { return mPipelineCache; }
-	inline const auto& EnabledExtensions() const { return mExtensions; }
-
 	void  LoadPipelineCache(const std::filesystem::path& path);
 	void StorePipelineCache(const std::filesystem::path& path);
+
+	inline VmaAllocator                           MemoryAllocator() const { return mMemoryAllocator; }
+	inline vk::Instance                           GetInstance() const { return mInstance; }
+	inline const vk::raii::PhysicalDevice&        PhysicalDevice() const { return mPhysicalDevice; }
+	inline const vk::raii::PipelineCache&         PipelineCache() const { return mPipelineCache; }
+	inline const vk::PhysicalDeviceLimits&        Limits() const { return mLimits; }
+	inline const std::unordered_set<std::string>& EnabledExtensions() const { return mExtensions; }
+
+	vk::CommandPool GetCommandPool(uint32_t queueFamily);
 
 	inline uint32_t FindQueueFamily(const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
 		const auto queueFamilyProperties = mPhysicalDevice.getQueueFamilyProperties();
@@ -69,13 +73,11 @@ public:
 		return -1;
 	}
 
-	vk::CommandPool GetCommandPool(uint32_t queueFamily);
-
 	DescriptorSets AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts);
 
 	inline const vk::raii::Semaphore& TimelineSemaphore() const { return mTimelineSemaphore; }
-	inline uint64_t NextTimelineCounterValue() const { return mCurrentSemaphoreValue; }
-	inline uint64_t IncrementTimelineCounter() { return mCurrentSemaphoreValue++; }
+	inline uint64_t NextTimelineCounterValue() const { return mCurrentTimelineValue; }
+	inline uint64_t IncrementTimelineCounter() { return mCurrentTimelineValue++; }
 
 	inline void Wait(uint64_t value) {
 		auto result = mDevice.waitSemaphores(vk::SemaphoreWaitInfo{}

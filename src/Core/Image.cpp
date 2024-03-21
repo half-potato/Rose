@@ -1,8 +1,6 @@
 #include "Image.hpp"
 #include "Buffer.hpp"
 
-#include <span>
-
 namespace RoseEngine {
 
 std::vector<std::vector<Image::ResourceState>> CreateSubresourceStates(const ImageInfo& info) {

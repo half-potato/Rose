@@ -4,7 +4,6 @@
 #include <stacktrace>
 #endif
 
-#include <iostream>
 #include <source_location>
 
 #include "Device.hpp"

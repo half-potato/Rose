@@ -11,20 +11,20 @@ namespace RoseEngine {
 
 static bool gInitialized = false;
 
-std::pair<vk::raii::PhysicalDevice, uint32_t> Window::FindSupportedDevice(const vk::raii::Instance& instance) {
-	for (const vk::raii::PhysicalDevice physicalDevice : instance.enumeratePhysicalDevices()) {
+std::pair<vk::raii::PhysicalDevice, uint32_t> Window::SupportedDevice(const vk::raii::Instance& instance) {
+	for (const auto physicalDevice : instance.enumeratePhysicalDevices()) {
 		const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 		for (uint32_t i = 0; i < queueFamilyProperties.size(); i++)
 			if (glfwGetPhysicalDevicePresentationSupport(*instance, *physicalDevice, i))
-				return std::tie(physicalDevice, i);
+				return std::make_pair(physicalDevice, i);
 	}
 	return std::make_pair( vk::raii::PhysicalDevice(nullptr), uint32_t(-1) );
 }
-std::vector<uint32_t> Window::FindSupportedQueueFamilies(const vk::raii::Instance& instance, const vk::raii::PhysicalDevice& physicalDevice) {
+std::vector<uint32_t> Window::SupportedQueueFamilies(const vk::Instance& instance, const vk::PhysicalDevice physicalDevice) {
 	std::vector<uint32_t> families;
 	const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 	for (uint32_t i = 0; i < queueFamilyProperties.size(); i++)
-		if (glfwGetPhysicalDevicePresentationSupport(*instance, *physicalDevice, i))
+		if (glfwGetPhysicalDevicePresentationSupport(instance, physicalDevice, i))
 			families.emplace_back(i);
 	return families;
 }

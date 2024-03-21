@@ -1,8 +1,6 @@
 #pragma once
 
-#include <unordered_set>
-
-#include "RoseEngine.hpp"
+#include "Swapchain.hpp"
 #include "MathTypes.hpp"
 
 struct GLFWwindow;
@@ -30,8 +28,8 @@ public:
 	void        PollEvents() const;
 
 	static std::span<const char*>                        RequiredInstanceExtensions();
-	static std::pair<vk::raii::PhysicalDevice, uint32_t> FindSupportedDevice(const vk::raii::Instance& instance);
-	static std::vector<uint32_t>                         FindSupportedQueueFamilies(const vk::raii::Instance& instance, const vk::raii::PhysicalDevice& physicalDevice);
+	static std::pair<vk::raii::PhysicalDevice, uint32_t> SupportedDevice(const vk::raii::Instance& instance);
+	static std::vector<uint32_t>                         SupportedQueueFamilies(const vk::Instance instance, const vk::PhysicalDevice physicalDevice);
 
 private:
 	GLFWwindow*              mWindow = nullptr;

@@ -48,7 +48,7 @@ void ConfigureFeatures(Device& device, auto& features, auto& createInfo) {
 	std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(createInfo).rayQuery = device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 }
 
-ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice physicalDevice, const std::vector<std::string>& deviceExtensions) {
+ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const std::vector<std::string>& deviceExtensions) {
 	ref<Device> device = make_ref<Device>();
 
 	device->mPhysicalDevice = physicalDevice;
@@ -104,7 +104,7 @@ ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDev
 
 	// Create timeline semaphore
 
-	device->mCurrentSemaphoreValue = 0;
+	device->mCurrentTimelineValue = 0;
 	vk::StructureChain<vk::SemaphoreCreateInfo, vk::SemaphoreTypeCreateInfo> semaphoreInfo = {};
 	semaphoreInfo.get<vk::SemaphoreTypeCreateInfo>()
 		.setSemaphoreType(vk::SemaphoreType::eTimeline)

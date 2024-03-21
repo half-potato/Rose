@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_set>
-
 #include "RoseEngine.hpp"
 
 namespace RoseEngine {
