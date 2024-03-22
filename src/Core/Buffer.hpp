@@ -46,10 +46,10 @@ public:
 		const vk::BufferUsageFlags     usage           = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst,
 		const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eDeviceLocal,
 		const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
-	template<std::ranges::range R>
+	template<std::ranges::contiguous_range R>
 	static BufferRange<std::ranges::range_value_t<R>> Create(
 		const Device& device,
-		const R& data,
+		R&&           data,
 		const vk::BufferUsageFlags     usage           = vk::BufferUsageFlagBits::eTransferSrc,
 		const vk::MemoryPropertyFlags  memoryFlags     = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
 		const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
@@ -106,6 +106,8 @@ struct BufferRange {
 	using pointer   = value_type*;
 	using iterator   = T*;
 
+	inline operator bool() const { return mBuffer != nullptr; }
+
 	inline bool empty() const { return !mBuffer || mSize == 0; }
 	inline size_type size() const { return mSize; }
 	inline size_type size_bytes() const { return mSize == VK_WHOLE_SIZE ? VK_WHOLE_SIZE : mSize * sizeof(T); }
@@ -132,25 +134,24 @@ struct BufferRange {
 	}
 };
 
-template<std::ranges::range R>
+template<std::ranges::contiguous_range R>
 inline BufferRange<std::ranges::range_value_t<R>> Buffer::Create(
 	const Device&                  device,
-	const R&                       data,
+	R&&                            data,
 	const vk::BufferUsageFlags     usage,
 	const vk::MemoryPropertyFlags  memoryFlags,
 	const VmaAllocationCreateFlags allocationFlags ) {
 
-	using T = std::ranges::range_value_t<R>;
-	const size_t size = std::ranges::size(data);
+	const size_t size = data.size() * sizeof(std::ranges::range_value_t<R>);
 
 	BufferView buf = Buffer::Create(
 		device,
-		size * sizeof(T),
+		size,
 		usage,
 		memoryFlags,
 		allocationFlags);
 
-	std::ranges::copy_n(std::ranges::begin(data), size, (T*)buf.data());
+	std::memcpy(buf.data(), data.data(), size);
 
 	return buf;
 }

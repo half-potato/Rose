@@ -9,18 +9,21 @@
 
 namespace RoseEngine {
 
-static bool gInitialized = false;
+static bool gGLFWInitialized = false;
 
-std::pair<vk::raii::PhysicalDevice, uint32_t> Window::SupportedDevice(const vk::raii::Instance& instance) {
-	for (const auto physicalDevice : instance.enumeratePhysicalDevices()) {
-		const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-		for (uint32_t i = 0; i < queueFamilyProperties.size(); i++)
-			if (glfwGetPhysicalDevicePresentationSupport(*instance, *physicalDevice, i))
-				return std::make_pair(physicalDevice, i);
+void InitGLFW() {
+	if (!gGLFWInitialized) {
+		gGLFWInitialized = true;
+		if (glfwInit() != GLFW_TRUE) {
+			std::cerr << "Error: Failed to initialize GLFW" << std::endl;
+			throw std::runtime_error("Failed to initialized GLFW");
+		}
 	}
-	return std::make_pair( vk::raii::PhysicalDevice(nullptr), uint32_t(-1) );
 }
-std::vector<uint32_t> Window::SupportedQueueFamilies(const vk::Instance& instance, const vk::PhysicalDevice physicalDevice) {
+
+std::vector<uint32_t> Window::FindSupportedQueueFamilies(const vk::Instance instance, const vk::PhysicalDevice physicalDevice) {
+	InitGLFW();
+
 	std::vector<uint32_t> families;
 	const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 	for (uint32_t i = 0; i < queueFamilyProperties.size(); i++)
@@ -28,14 +31,19 @@ std::vector<uint32_t> Window::SupportedQueueFamilies(const vk::Instance& instanc
 			families.emplace_back(i);
 	return families;
 }
+std::pair<vk::raii::PhysicalDevice, uint32_t> Window::FindSupportedDevice(const vk::raii::Instance& instance) {
+	InitGLFW();
+
+	for (const auto physicalDevice : instance.enumeratePhysicalDevices()) {
+		auto families = FindSupportedQueueFamilies(*instance, *physicalDevice);
+		if (!families.empty())
+			return std::make_pair(physicalDevice, families.front());
+	}
+	return std::make_pair( vk::raii::PhysicalDevice(nullptr), uint32_t(-1) );
+}
 
 std::span<const char*> Window::RequiredInstanceExtensions() {
-	if (!gInitialized) {
-		if (glfwInit() != GLFW_TRUE) {
-			std::cerr << "Error: Failed to initialize GLFW" << std::endl;
-			throw std::runtime_error("Failed to initialized GLFW");
-		}
-	}
+	InitGLFW();
 
 	uint32_t count;
 	const char** ptr = glfwGetRequiredInstanceExtensions(&count);
@@ -44,7 +52,7 @@ std::span<const char*> Window::RequiredInstanceExtensions() {
 
 void Window::WindowSizeCallback(GLFWwindow* window, int width, int height) {
 	Window* w = (Window*)glfwGetWindowUserPointer(window);
-	w->mClientExtent = uint2{ (uint32_t)width, (uint32_t)height };
+	w->mClientExtent = uint2((uint32_t)width, (uint32_t)height);
 }
 void Window::DropCallback(GLFWwindow* window, int count, const char** paths) {
 	Window* w = (Window*)glfwGetWindowUserPointer(window);
@@ -58,7 +66,7 @@ void ErrorCallback(int code, const char* msg) {
 }
 
 ref<Window> Window::Create(Instance& instance, const std::string& title, const uint2& extent) {
-	if (!gInitialized) {
+	if (!gGLFWInitialized) {
 		if (glfwInit() != GLFW_TRUE) {
 			std::cerr << "Error: Failed to initialize GLFW" << std::endl;
 			throw std::runtime_error("Failed to initialized GLFW");
@@ -66,7 +74,6 @@ ref<Window> Window::Create(Instance& instance, const std::string& title, const u
 	}
 
 	auto window = make_ref<Window>();
-	window->mTitle = title;
 	window->mClientExtent = extent;
 
 	glfwSetErrorCallback(ErrorCallback);
@@ -75,24 +82,22 @@ ref<Window> Window::Create(Instance& instance, const std::string& title, const u
 	glfwWindowHint(GLFW_REFRESH_RATE, GLFW_DONT_CARE);
 	window->mWindow = glfwCreateWindow(extent.x, extent.y, title.c_str(), NULL, NULL);
 	glfwSetWindowUserPointer(window->mWindow, window.get());
+	glfwSetFramebufferSizeCallback(window->mWindow, Window::WindowSizeCallback);
+	glfwSetDropCallback           (window->mWindow, Window::DropCallback);
 
 	VkSurfaceKHR surface;
 	if (glfwCreateWindowSurface(**instance, window->mWindow, NULL, &surface))
 		throw std::runtime_error("Failed to create surface");
 	window->mSurface = vk::raii::SurfaceKHR(*instance, surface);
 
-	glfwSetFramebufferSizeCallback(window->mWindow, Window::WindowSizeCallback);
-	glfwSetDropCallback           (window->mWindow, Window::DropCallback);
-
 	return window;
 }
 Window::~Window() {
 	glfwDestroyWindow(mWindow);
 	glfwTerminate();
-	gInitialized = false;
 }
 
-void Window::PollEvents() const {
+void Window::PollEvents() {
 	glfwPollEvents();
 }
 
@@ -100,8 +105,8 @@ bool Window::IsOpen() const {
 	return !glfwWindowShouldClose(mWindow);
 }
 
-void Window::Resize(const vk::Extent2D& extent) const {
-	glfwSetWindowSize(mWindow, extent.width, extent.height);
+void Window::Resize(const uint2 extent) const {
+	glfwSetWindowSize(mWindow, extent.x, extent.y);
 }
 
 void Window::SetFullscreen(const bool fs) {

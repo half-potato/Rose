@@ -3,9 +3,6 @@
 #include <queue>
 
 #include "Pipeline.hpp"
-#include "TransientResourceCache.hpp"
-#include "Buffer.hpp"
-#include "Image.hpp"
 #include "CommandContext.hpp"
 
 namespace RoseEngine {

@@ -3,7 +3,7 @@
 
 namespace RoseEngine {
 
-ref<Swapchain> Swapchain::Create(Device& device, const vk::SurfaceKHR surface, const uint32_t minImages, const vk::ImageUsageFlags imageUsage, const vk::SurfaceFormatKHR surfaceFormat, const vk::PresentModeKHR presentMode) {
+ref<Swapchain> Swapchain::Create(Device& device, const vk::SurfaceKHR surface, const uint32_t minImages, const vk::ImageUsageFlags imageUsage, const vk::SurfaceFormatKHR surfaceFormat, const vk::PresentModeKHR preferredPresentMode) {
 	auto swapchain = make_ref<Swapchain>();
 	swapchain->mMinImageCount = minImages;
 	swapchain->mUsage = imageUsage;
@@ -19,17 +19,17 @@ ref<Swapchain> Swapchain::Create(Device& device, const vk::SurfaceKHR surface, c
 
 	swapchain->mPresentMode = vk::PresentModeKHR::eFifo; // required to be supported
 	for (const vk::PresentModeKHR& mode : device.PhysicalDevice().getSurfacePresentModesKHR(surface))
-		if (mode == presentMode) {
+		if (mode == preferredPresentMode) {
 			swapchain->mPresentMode = mode;
 			break;
 		}
 
-	swapchain->mDirty = !swapchain->Recreate(device, surface);
+	swapchain->mDirty = true;
 
 	return swapchain;
 }
 
-bool Swapchain::Recreate(Device& device, vk::SurfaceKHR surface) {
+bool Swapchain::Recreate(Device& device, vk::SurfaceKHR surface, const std::vector<uint32_t>& queueFamilies) {
 	// get the size of the swapchain
 	const vk::SurfaceCapabilitiesKHR capabilities = device.PhysicalDevice().getSurfaceCapabilitiesKHR(surface);
 	if (capabilities.currentExtent.width == 0 ||
@@ -41,25 +41,21 @@ bool Swapchain::Recreate(Device& device, vk::SurfaceKHR surface) {
 	mExtent = uint2(capabilities.currentExtent.width, capabilities.currentExtent.height);
 	mMinImageCount = std::max(mMinImageCount, capabilities.minImageCount);
 
-	std::vector<uint32_t> queueFamilies = Window::SupportedQueueFamilies(device.GetInstance(), *device.PhysicalDevice());
-	if (queueFamilies.empty())
-		return false;
-
 	vk::raii::SwapchainKHR oldSwapchain = std::move( mSwapchain );
 	vk::SwapchainCreateInfoKHR info {
 		.surface = surface,
-		.minImageCount = mMinImageCount,
-		.imageFormat = mSurfaceFormat.format,
-		.imageColorSpace = mSurfaceFormat.colorSpace,
-		.imageExtent = capabilities.currentExtent,
+		.minImageCount    = mMinImageCount,
+		.imageFormat      = mSurfaceFormat.format,
+		.imageColorSpace  = mSurfaceFormat.colorSpace,
+		.imageExtent      = capabilities.currentExtent,
 		.imageArrayLayers = 1,
-		.imageUsage = mUsage,
+		.imageUsage       = mUsage,
 		.imageSharingMode = vk::SharingMode::eExclusive,
-		.preTransform = capabilities.currentTransform,
-		.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		.presentMode = mPresentMode,
-		.clipped = VK_FALSE,
-		.oldSwapchain = *oldSwapchain ? *oldSwapchain : nullptr,
+		.preTransform     = capabilities.currentTransform,
+		.compositeAlpha   = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+		.presentMode      = mPresentMode,
+		.clipped          = VK_FALSE,
+		.oldSwapchain     = *oldSwapchain ? *oldSwapchain : nullptr,
 	};
 	info.setQueueFamilyIndices(queueFamilies);
 	mSwapchain = std::move( vk::raii::SwapchainKHR(*device, info) );
@@ -71,12 +67,19 @@ bool Swapchain::Recreate(Device& device, vk::SurfaceKHR surface) {
 	mImages.resize(images.size());
 	mImageAvailableSemaphores.resize(images.size());
 	for (uint32_t i = 0; i < mImages.size(); i++) {
-		mImages[i] = Image::Create(images[i], ImageInfo{
-			.format = mSurfaceFormat.format,
-			.extent = uint3(mExtent, 1),
-			.usage = info.imageUsage,
-			.queueFamilies = queueFamilies });
-		
+		mImages[i] = ImageView::Create(
+			Image::Create(**device, images[i], ImageInfo{
+				.format = mSurfaceFormat.format,
+				.extent = uint3(mExtent, 1),
+				.usage = info.imageUsage,
+				.queueFamilies = queueFamilies }),
+			vk::ImageSubresourceRange{
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1 });
+
 		if (!mImageAvailableSemaphores[i])
 			mImageAvailableSemaphores[i] = make_ref<vk::raii::Semaphore>(*device, vk::SemaphoreCreateInfo{});
 	}

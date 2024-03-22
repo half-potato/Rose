@@ -1,4 +1,5 @@
 #include "Buffer.hpp"
+#include <iostream>
 
 namespace RoseEngine {
 

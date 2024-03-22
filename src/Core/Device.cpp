@@ -52,6 +52,7 @@ ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDev
 	ref<Device> device = make_ref<Device>();
 
 	device->mPhysicalDevice = physicalDevice;
+	device->mInstance = **instance;
 
 	for (const auto& e : deviceExtensions)
 		device->mExtensions.emplace(e);
@@ -108,7 +109,7 @@ ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDev
 	vk::StructureChain<vk::SemaphoreCreateInfo, vk::SemaphoreTypeCreateInfo> semaphoreInfo = {};
 	semaphoreInfo.get<vk::SemaphoreTypeCreateInfo>()
 		.setSemaphoreType(vk::SemaphoreType::eTimeline)
-		.setInitialValue(device->IncrementTimelineCounter());
+		.setInitialValue(device->IncrementTimelineSignal());
 	device->mTimelineSemaphore = device->mDevice.createSemaphore(semaphoreInfo.get<vk::SemaphoreCreateInfo>());
 
 	// Assign stuff

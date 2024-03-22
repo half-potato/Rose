@@ -371,24 +371,27 @@ public:
 
 private:
 	vk::Image     mImage = nullptr;
+	vk::Device    mDevice = nullptr;
 	VmaAllocator  mMemoryAllocator = nullptr;
 	VmaAllocation mAllocation = nullptr;
 	ImageInfo     mInfo = {};
 
 	friend struct ImageView;
-	TupleMap<vk::raii::ImageView, vk::ImageSubresourceRange, vk::ImageViewType, vk::ComponentMapping> mCachedViews = {};
+	TupleMap<vk::ImageView, vk::ImageSubresourceRange, vk::ImageViewType, vk::ComponentMapping> mCachedViews = {};
 
 	std::vector<std::vector<ResourceState>> mSubresourceStates = {}; // mSubresourceStates[arrayLayer][mipLevel]
 
 public:
 	static ref<Image> Create(Device& device, const ImageInfo& info, const vk::MemoryPropertyFlags memoryFlags = vk::MemoryPropertyFlagBits::eDeviceLocal, const VmaAllocationCreateFlags allocationFlags = VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
-	static ref<Image> Create(const vk::Image image, const ImageInfo& info);
+	static ref<Image> Create(const vk::Device device, const vk::Image image, const ImageInfo& info);
 	~Image();
 
 	inline       vk::Image& operator*()        { return mImage; }
 	inline const vk::Image& operator*() const  { return mImage; }
 	inline       vk::Image* operator->()       { return &mImage; }
 	inline const vk::Image* operator->() const { return &mImage; }
+
+	inline vk::Device GetDevice() const { return mDevice; }
 
 	inline operator bool() const { return mImage; }
 
@@ -467,7 +470,7 @@ struct ImageView {
 	vk::ImageViewType         mType = vk::ImageViewType::e2D;
 	vk::ComponentMapping      mComponentMapping = {};
 
-	static ImageView Create(const Device& device, const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
+	static ImageView Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
 
 	inline       vk::ImageView& operator*()        { return mView; }
 	inline const vk::ImageView& operator*() const  { return mView; }
@@ -480,6 +483,7 @@ struct ImageView {
 	inline operator bool() const { return mView && mImage; }
 
 	inline uint3 Extent(const uint32_t levelOffset = 0) const { return GetLevelExtent(mImage->Info().extent, mSubresource.baseMipLevel + levelOffset); }
+	inline const ref<Image>& GetImage() const { return mImage; }
 
 	inline vk::ImageSubresourceLayers GetSubresourceLayer(const uint32_t levelOffset = 0) const {
 		return vk::ImageSubresourceLayers{

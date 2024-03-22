@@ -141,18 +141,7 @@ void Program::BindParameters(CommandContext& context) {
 	for (const auto&[setBinding, data] : w.uniforms) {
 		const auto [setIndex,bindingIndex] = setBinding;
 
-		const std::string id = "Uniforms" + std::to_string(setIndex) + "." + std::to_string(bindingIndex);
-
-		auto hostBuffer = mCachedUniformBuffers["Host" + id].pop_or_create(context.GetDevice(), [&](){ return Buffer::Create(context.GetDevice(), data); });
-
-		auto buffer = mCachedUniformBuffers[id].pop_or_create(context.GetDevice(), [&](){ return Buffer::Create(
-			context.GetDevice(),
-			data.size(),
-			vk::BufferUsageFlagBits::eUniformBuffer|vk::BufferUsageFlagBits::eTransferDst,
-			vk::MemoryPropertyFlagBits::eDeviceLocal,
-			VMA_ALLOCATION_CREATE_STRATEGY_MIN_TIME_BIT); });
-
-		context.Copy(hostBuffer, buffer);
+		auto buffer = context.UploadData(data);
 
 		w.WriteBuffer(
 			ShaderDescriptorBinding{

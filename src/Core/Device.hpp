@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vk_mem_alloc.h>
+#include <bitset>
 
 #include "RoseEngine.hpp"
 
@@ -15,6 +16,7 @@ private:
 	vk::raii::Device         mDevice = nullptr;
 	vk::raii::PhysicalDevice mPhysicalDevice = nullptr;
 	vk::raii::PipelineCache  mPipelineCache = nullptr;
+	vk::Instance             mInstance = nullptr;
 	VmaAllocator             mMemoryAllocator = nullptr;
 
 	vk::raii::Semaphore      mTimelineSemaphore = nullptr;
@@ -65,19 +67,25 @@ public:
 	vk::CommandPool GetCommandPool(uint32_t queueFamily);
 
 	inline uint32_t FindQueueFamily(const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
+		uint32_t min_i = -1;
+		uint32_t min_bits = UINT32_MAX;
 		const auto queueFamilyProperties = mPhysicalDevice.getQueueFamilyProperties();
 		for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
-			if (queueFamilyProperties[i].queueFlags | flags)
-				return i;
+			const uint32_t bits =  std::bitset<32>((uint32_t)queueFamilyProperties[i].queueFlags).count();
+			if ((queueFamilyProperties[i].queueFlags & flags) == flags && bits < min_bits) {
+				min_i = i;
+				min_bits = bits;
+			}
 		}
-		return -1;
+		return min_i;
 	}
 
 	DescriptorSets AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts);
 
 	inline const vk::raii::Semaphore& TimelineSemaphore() const { return mTimelineSemaphore; }
-	inline uint64_t NextTimelineCounterValue() const { return mCurrentTimelineValue; }
-	inline uint64_t IncrementTimelineCounter() { return mCurrentTimelineValue++; }
+	inline uint64_t CurrentTimelineValue() const { return mTimelineSemaphore.getCounterValue(); }
+	inline uint64_t NextTimelineSignal() const { return mCurrentTimelineValue; }
+	inline uint64_t IncrementTimelineSignal() { return mCurrentTimelineValue++; }
 
 	inline void Wait(uint64_t value) {
 		auto result = mDevice.waitSemaphores(vk::SemaphoreWaitInfo{}
@@ -90,9 +98,7 @@ public:
 	}
 
 	inline void Wait() {
-		const uint64_t value = IncrementTimelineCounter();
-		mDevice.signalSemaphore(vk::SemaphoreSignalInfo{ .value = value });
-		Wait(value);
+		Wait(mCurrentTimelineValue - 1);
 	}
 
 	template<typename T> requires(std::convertible_to<decltype(T::objectType), vk::ObjectType>)

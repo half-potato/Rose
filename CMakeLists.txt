@@ -26,67 +26,55 @@ if (NOT EXISTS ${SLANG_ROOT})
 	endif()
 endif()
 
-# includes
-include_directories(thirdparty)
-include_directories(src)
-
 # compiler options
 set(CMAKE_CXX_STANDARD 23)
 set(CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-# source files
-file(GLOB_RECURSE SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/**.cpp")
-# third party source files
-list(APPEND SRCS
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz.c"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/pugixml.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/imgui_demo.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/imgui_draw.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/imgui_tables.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/imgui_widgets.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/imgui_impl_glfw.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/imgui_impl_vulkan.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/imgui.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ImGuizmo.cpp"
-)
+add_compile_definitions(_USE_MATH_DEFINES IMGUI_DEFINE_MATH_OPERATORS VULKAN_HPP_NO_STRUCT_CONSTRUCTORS)
 
-set(TARGET_NAME RoseEngine)
-
-add_executable(${TARGET_NAME} ${SRCS} src/main.cpp)
-set_target_properties(${TARGET_NAME} PROPERTIES LINKER_LANGUAGE CXX)
-target_compile_definitions(${TARGET_NAME} PUBLIC _USE_MATH_DEFINES IMGUI_DEFINE_MATH_OPERATORS VULKAN_HPP_NO_STRUCT_CONSTRUCTORS)
-
-option(ENABLE_DEBUG_LAYERS "Enable debug layers" TRUE)
-if (${ENABLE_DEBUG_LAYERS})
-    target_compile_definitions(${TARGET_NAME} PUBLIC ENABLE_DEBUG_LAYERS)
-endif()
-
-configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
-
-# compile GLFW
 add_subdirectory(thirdparty/glfw)
-include_directories(thirdparty/glfw/deps)
-
-# compile glm
 add_subdirectory(thirdparty/glm)
 
-# Link dependencies
-target_include_directories(${TARGET_NAME} PUBLIC thirdparty/glfw/include)
-target_link_libraries(${TARGET_NAME} PUBLIC Vulkan::Vulkan glfw glm)
+include_directories(thirdparty)
+include_directories(src)
+link_libraries(Vulkan::Vulkan)
+link_libraries(glm)
+
+
+file(GLOB_RECURSE SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
+add_library(RoseLib
+	${SRCS}
+	thirdparty/miniz.c
+	thirdparty/pugixml.cpp
+	thirdparty/imgui/imgui_demo.cpp
+	thirdparty/imgui/imgui_draw.cpp
+	thirdparty/imgui/imgui_tables.cpp
+	thirdparty/imgui/imgui_widgets.cpp
+	thirdparty/imgui/imgui_impl_glfw.cpp
+	thirdparty/imgui/imgui_impl_vulkan.cpp
+	thirdparty/imgui/imgui.cpp
+	thirdparty/ImGuizmo.cpp)
+set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
+
+add_executable(Rose src/main.cpp)
+target_link_libraries(Rose RoseLib)
+
+target_link_libraries(RoseLib glfw)
+target_include_directories(RoseLib PRIVATE thirdparty/glfw/include thirdparty/glfw/deps)
 
 if(UNIX)
-    target_link_libraries(${TARGET_NAME} PUBLIC pthread ${CMAKE_DL_LIBS} xcb xcb-keysyms)
-    target_compile_definitions(${TARGET_NAME} PUBLIC VK_USE_PLATFORM_XCB_KHR _GLFW_X11)
+    target_link_libraries(RoseLib pthread ${CMAKE_DL_LIBS} xcb xcb-keysyms)
+    add_compile_definitions(VK_USE_PLATFORM_XCB_KHR _GLFW_X11)
 
 	# Link slang
-    target_link_libraries(${TARGET_NAME} PUBLIC "${SLANG_ROOT}/bin/linux-x64/release/libslang.so")
+    target_link_libraries(RoseLib "${SLANG_ROOT}/bin/linux-x64/release/libslang.so")
 elseif(WIN32)
-    target_compile_definitions(${TARGET_NAME} PUBLIC VK_USE_PLATFORM_WIN32_KHR _GLFW_WIN32 WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS NOMINMAX)
-    target_compile_options(${TARGET_NAME} PUBLIC /bigobj /MP)
+    add_compile_definitions(VK_USE_PLATFORM_WIN32_KHR _GLFW_WIN32 WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS NOMINMAX)
+    add_compile_options(/bigobj /MP)
 
 	# Link slang
-    target_link_libraries(${TARGET_NAME} PUBLIC "${SLANG_ROOT}/bin/windows-x64/release/slang.lib")
+    target_link_libraries(RoseLib "${SLANG_ROOT}/bin/windows-x64/release/slang.lib")
 
 	# Copy slang DLLs to output directory
 	configure_file("${SLANG_ROOT}/bin/windows-x64/release/slang-glslang.dll" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang-glslang.dll" COPYONLY)
@@ -95,16 +83,26 @@ endif()
 
 if (assimp_FOUND)
 	if (WIN32)
-		target_link_libraries(${TARGET_NAME} PRIVATE assimp::assimp)
+		target_link_libraries(RoseLib PRIVATE assimp::assimp)
 	else()
-		target_link_libraries(${TARGET_NAME} PRIVATE assimp)
+		target_link_libraries(RoseLib PRIVATE assimp)
 	endif()
-    target_compile_definitions(${TARGET_NAME} PUBLIC ENABLE_ASSIMP)
+    target_compile_definitions(RoseLib PUBLIC ENABLE_ASSIMP)
     message(STATUS "Assimp enabled")
 endif()
 
 if (OpenVDB_FOUND)
-    target_link_libraries(${TARGET_NAME} PRIVATE OpenVDB::openvdb)
-    target_compile_definitions(${TARGET_NAME} PUBLIC ENABLE_OPENVDB)
+    target_link_libraries(RoseLib PRIVATE OpenVDB::openvdb)
+    target_compile_definitions(RoseLib PUBLIC ENABLE_OPENVDB)
     message(STATUS "OpenVDB enabled")
 endif()
+
+configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
+
+
+enable_testing()
+
+add_executable(test_program src/tests/program.cpp)
+target_link_libraries(test_program RoseLib)
+add_test(program bin/test_program)
+set_tests_properties(program PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")

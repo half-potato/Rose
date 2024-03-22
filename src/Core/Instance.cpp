@@ -115,11 +115,6 @@ ref<Instance> Instance::Create(const std::vector<std::string>& extensions, const
 
 	instance->mVulkanApiVersion = appInfo.apiVersion;
 
-	std::cout << "Vulkan "
-		<< VK_VERSION_MAJOR(instance->mVulkanApiVersion) << "."
-		<< VK_VERSION_MINOR(instance->mVulkanApiVersion) << "."
-		<< VK_VERSION_PATCH(instance->mVulkanApiVersion) << std::endl;
-
 	if (instance->mValidationLayers.contains("VK_LAYER_KHRONOS_validation")) {
 		instance->mDebugMessenger = vk::raii::DebugUtilsMessengerEXT(instance->mInstance, vk::DebugUtilsMessengerCreateInfoEXT{
 			.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,

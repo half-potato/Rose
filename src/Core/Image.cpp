@@ -47,15 +47,17 @@ ref<Image> Image::Create(Device& device, const ImageInfo& info, const vk::Memory
 
 	auto image = make_ref<Image>();
 	image->mImage = vkimg;
+	image->mDevice = **device;
 	image->mMemoryAllocator = device.MemoryAllocator();
 	image->mAllocation = alloc;
 	image->mInfo = info;
 	image->mSubresourceStates = CreateSubresourceStates(info);
 	return image;
 }
-ref<Image> Image::Create(const vk::Image vkimage, const ImageInfo& info) {
+ref<Image> Image::Create(const vk::Device device, const vk::Image vkimage, const ImageInfo& info) {
 	auto image = make_ref<Image>();
 	image->mImage = vkimage;
+	image->mDevice = device;
 	image->mMemoryAllocator = nullptr;
 	image->mAllocation = nullptr;
 	image->mInfo = info;
@@ -63,6 +65,8 @@ ref<Image> Image::Create(const vk::Image vkimage, const ImageInfo& info) {
 	return image;
 }
 Image::~Image() {
+	for (auto[key, v] : mCachedViews)
+		mDevice.destroyImageView(v);
 	if (mMemoryAllocator && mImage && mAllocation) {
 		vmaDestroyImage(mMemoryAllocator, mImage, mAllocation);
 		mMemoryAllocator = nullptr;
@@ -71,20 +75,20 @@ Image::~Image() {
 	}
 }
 
-ImageView ImageView::Create(const Device& device, const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type, const vk::ComponentMapping& componentMapping) {
+ImageView ImageView::Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type, const vk::ComponentMapping& componentMapping) {
 	auto key = std::tie(subresource, type, componentMapping);
 	auto it = image->mCachedViews.find(key);
 	if (it == image->mCachedViews.end()) {
-		vk::raii::ImageView v(*device, vk::ImageViewCreateInfo{
+		vk::ImageView v = image->mDevice.createImageView(vk::ImageViewCreateInfo{
 			.image = **image,
 			.viewType = type,
 			.format = image->Info().format,
 			.components = componentMapping,
 			.subresourceRange = subresource });
-		it = image->mCachedViews.emplace(key, std::move(v)).first;
+		it = image->mCachedViews.emplace(key, v).first;
 	}
 	return ImageView{
-		.mView = *it->second,
+		.mView = it->second,
 		.mImage = image,
 		.mSubresource = subresource,
 		.mType = type,

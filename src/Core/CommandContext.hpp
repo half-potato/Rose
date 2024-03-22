@@ -1,4 +1,8 @@
-#include "Device.hpp"
+#pragma once
+
+#include "TransientResourceCache.hpp"
+#include "Buffer.hpp"
+#include "Image.hpp"
 
 namespace RoseEngine {
 
@@ -7,10 +11,14 @@ private:
 	vk::raii::CommandBuffer mCommandBuffer = nullptr;
 	ref<Device> mDevice = {};
 	uint32_t mQueueFamily = {};
-	uint64_t mSignalValue = 0;
+	TransientResourceCache<vk::raii::CommandBuffer> mCommandBufferCache = {};
 
 	std::vector<vk::BufferMemoryBarrier2> mBufferBarrierQueue = {};
 	std::vector<vk::ImageMemoryBarrier2>  mImageBarrierQueue = {};
+
+	using CachedUploadBuffers = std::pair<BufferView, BufferView>;
+	std::unordered_map<vk::BufferUsageFlags, std::vector<CachedUploadBuffers>> mCachedUploadBuffers = {};
+	std::vector<CachedUploadBuffers> mNewCachedUploadBuffers = {};
 
 public:
 	inline       vk::raii::CommandBuffer& operator*()        { return mCommandBuffer; }
@@ -18,32 +26,51 @@ public:
 	inline       vk::raii::CommandBuffer* operator->()       { return &mCommandBuffer; }
 	inline const vk::raii::CommandBuffer* operator->() const { return &mCommandBuffer; }
 
-	inline static ref<CommandContext> Create(const ref<Device> device, uint32_t queueFamily = -1) {
-		if (queueFamily == -1) queueFamily = device->FindQueueFamily();
-
+	inline static ref<CommandContext> Create(const ref<Device>& device, const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
+		ref<CommandContext> context = make_ref<CommandContext>();
+		context->mDevice = device;
+		context->mQueueFamily = device->FindQueueFamily(flags);
+		return context;
+	}
+	inline static ref<CommandContext> Create(const ref<Device>& device, uint32_t queueFamily) {
 		ref<CommandContext> context = make_ref<CommandContext>();
 		context->mDevice = device;
 		context->mQueueFamily = queueFamily;
-
-		auto commandBuffers = (*device)->allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-			.commandPool = device->GetCommandPool(queueFamily),
-			.level = vk::CommandBufferLevel::ePrimary,
-			.commandBufferCount = 1 });
-		context->mCommandBuffer = std::move(commandBuffers[0]);
-
-		context->mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
-
 		return context;
 	}
 
 	inline Device& GetDevice() const { return *mDevice; }
+	inline uint32_t QueueFamily() const { return mQueueFamily; }
 
-	inline uint64_t CurrentCounterValue() const { return GetDevice().TimelineSemaphore().getCounterValue(); }
+	inline void Begin() {
+		mCommandBuffer = mCommandBufferCache.pop_or_create(*mDevice, [&](){
+			auto commandBuffers = (*mDevice)->allocateCommandBuffers(vk::CommandBufferAllocateInfo{
+				.commandPool = mDevice->GetCommandPool(mQueueFamily),
+				.level = vk::CommandBufferLevel::ePrimary,
+				.commandBufferCount = 1 });
+			return std::move(commandBuffers[0]);
+		});
 
-	inline uint64_t Submit(const uint32_t queueIndex = 0, uint64_t waitValue = 0, vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eTopOfPipe) const {
+		mCommandBuffer.reset();
+		mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
+
+		for (auto& b : mNewCachedUploadBuffers)
+			mCachedUploadBuffers[b.second.mBuffer->Usage()].emplace_back(std::move(b));
+		mNewCachedUploadBuffers.clear();
+		for (auto& [usage, bufs] : mCachedUploadBuffers)
+			std::ranges::sort(bufs, [](const auto& lhs, const auto& rhs) { return lhs.first.size() < rhs.first.size(); });
+	}
+
+	// Signals the device's timeline semaphore upon completion. Returns the signal value.
+	inline uint64_t Submit(
+		const uint32_t queueIndex = 0,
+		const vk::ArrayProxy<const vk::Semaphore>&          signalSemaphores = {},
+		const vk::ArrayProxy<const uint64_t>&               signalValues = {},
+		const vk::ArrayProxy<const vk::Semaphore>&          waitSemaphores = {},
+		const vk::ArrayProxy<const vk::PipelineStageFlags>& waitStages = {},
+		const vk::ArrayProxy<const uint64_t>&               waitValues = {}) {
+
 		mCommandBuffer.end();
-
-		const uint64_t signalValue = mDevice->IncrementTimelineCounter();
 
 		vk::StructureChain<vk::SubmitInfo, vk::TimelineSemaphoreSubmitInfo> submitInfoChain = {};
 		auto& submitInfo = submitInfoChain.get<vk::SubmitInfo>();
@@ -51,20 +78,24 @@ public:
 
 		submitInfo.setCommandBuffers(*mCommandBuffer);
 
-		vk::Semaphore semaphore = *mDevice->TimelineSemaphore();
+		std::vector<vk::Semaphore> semaphores(signalSemaphores.size() + 1);
+		std::vector<uint64_t> values(signalValues.size() + 1);
+		std::ranges::copy(signalSemaphores, semaphores.begin());
+		std::ranges::copy(signalValues, values.begin());
+		semaphores.back() = *mDevice->TimelineSemaphore();
+		values.back() = mDevice->IncrementTimelineSignal();
 
-		submitInfo.setSignalSemaphores(semaphore);
-		timelineSubmitInfo.setSignalSemaphoreValues(signalValue);
+		submitInfo.setSignalSemaphores(semaphores);
+		timelineSubmitInfo.setSignalSemaphoreValues(values);
 
-		if (waitValue != 0) {
-			submitInfo.setWaitSemaphores(semaphore);
-			submitInfo.setWaitDstStageMask(waitStage);
-			timelineSubmitInfo.setWaitSemaphoreValues(waitValue);
-		}
+		submitInfo.setWaitSemaphores(waitSemaphores);
+		submitInfo.setWaitDstStageMask(waitStages);
+		timelineSubmitInfo.setWaitSemaphoreValues(waitValues);
 
 		(*mDevice)->getQueue(mQueueFamily, queueIndex).submit( submitInfo );
 
-		return signalValue;
+		mCommandBufferCache.push(std::move(mCommandBuffer), values[0]);
+		return values[0];
 	}
 
 	#pragma region Barriers
@@ -114,13 +145,14 @@ public:
 
 	#pragma endregion
 
-	#pragma region Copy, fill, etc.
+	#pragma region Copy, Fill, ClearColor
 
 	template<typename T> requires(sizeof(T) == sizeof(uint32_t))
 	inline void Fill(const BufferRange<T>& buffer, const T data, const vk::DeviceSize offset = 0, const vk::DeviceSize size = VK_WHOLE_SIZE) {
 		AddBarrier(buffer, Buffer::ResourceState{
 			.stage  = vk::PipelineStageFlagBits2::eTransfer,
-			.access = vk::AccessFlagBits2::eTransferWrite });
+			.access = vk::AccessFlagBits2::eTransferWrite,
+			.queueFamily = mQueueFamily });
 		ExecuteBarriers();
 		mCommandBuffer.fillBuffer(**buffer.mBuffer, offset, std::min(size, buffer.size_bytes()), std::bit_cast<uint32_t>(data));
 	}
@@ -131,10 +163,12 @@ public:
 			throw std::runtime_error("dst smaller than src: " + std::to_string(dst.size_bytes()) + " < " + std::to_string(src.size_bytes()));
 		AddBarrier(src, Buffer::ResourceState{
 			.stage  = vk::PipelineStageFlagBits2::eTransfer,
-			.access = vk::AccessFlagBits2::eTransferRead });
+			.access = vk::AccessFlagBits2::eTransferRead,
+			.queueFamily = mQueueFamily });
 		AddBarrier(dst, Buffer::ResourceState{
 			.stage  = vk::PipelineStageFlagBits2::eTransfer,
-			.access = vk::AccessFlagBits2::eTransferWrite });
+			.access = vk::AccessFlagBits2::eTransferWrite,
+			.queueFamily = mQueueFamily });
 
 		ExecuteBarriers();
 
@@ -150,12 +184,14 @@ public:
 	inline void Copy(const BufferRange<T>& src, const ImageView& dst, const uint32_t dstLevel = 0) {
 		AddBarrier(src, Buffer::ResourceState{
 			.stage  = vk::PipelineStageFlagBits2::eTransfer,
-			.access = vk::AccessFlagBits2::eTransferRead });
+			.access = vk::AccessFlagBits2::eTransferRead,
+			.queueFamily = mQueueFamily });
 		AddBarrier(dst,
 			Image::ResourceState{
 				.layout = vk::ImageLayout::eTransferDstOptimal,
 				.stage = vk::PipelineStageFlagBits2::eTransfer,
-				.access = vk::AccessFlagBits2::eTransferWrite });
+				.access = vk::AccessFlagBits2::eTransferWrite,
+				.queueFamily = mQueueFamily });
 
 		ExecuteBarriers();
 
@@ -185,7 +221,8 @@ public:
 				Image::ResourceState{
 					.layout = vk::ImageLayout::eTransferSrcOptimal,
 					.stage = vk::PipelineStageFlagBits2::eTransfer,
-					.access = vk::AccessFlagBits2::eTransferRead });
+					.access = vk::AccessFlagBits2::eTransferRead,
+					.queueFamily = mQueueFamily });
 			AddBarrier(dst,
 				vk::ImageSubresourceRange{
 					.aspectMask     = region.dstSubresource.aspectMask,
@@ -196,7 +233,8 @@ public:
 				Image::ResourceState{
 					.layout = vk::ImageLayout::eTransferDstOptimal,
 					.stage = vk::PipelineStageFlagBits2::eTransfer,
-					.access = vk::AccessFlagBits2::eTransferWrite });
+					.access = vk::AccessFlagBits2::eTransferWrite,
+					.queueFamily = mQueueFamily });
 		}
 
 		ExecuteBarriers();
@@ -229,7 +267,8 @@ public:
 				Image::ResourceState{
 					.layout = vk::ImageLayout::eTransferSrcOptimal,
 					.stage = vk::PipelineStageFlagBits2::eTransfer,
-					.access = vk::AccessFlagBits2::eTransferRead });
+					.access = vk::AccessFlagBits2::eTransferRead,
+					.queueFamily = mQueueFamily });
 			AddBarrier(dst,
 				vk::ImageSubresourceRange{
 					.aspectMask     = region.dstSubresource.aspectMask,
@@ -240,7 +279,8 @@ public:
 				Image::ResourceState{
 					.layout = vk::ImageLayout::eTransferDstOptimal,
 					.stage = vk::PipelineStageFlagBits2::eTransfer,
-					.access = vk::AccessFlagBits2::eTransferWrite });
+					.access = vk::AccessFlagBits2::eTransferWrite,
+					.queueFamily = mQueueFamily });
 		}
 
 		ExecuteBarriers();
@@ -263,8 +303,28 @@ public:
 			filter);
 	}
 
+	inline void ClearColor(const ref<Image>& img, const vk::ClearColorValue& clearValue, const vk::ArrayProxy<const vk::ImageSubresourceRange>& subresources) {
+		for (const auto& subresource : subresources)
+			AddBarrier(img,
+				subresource,
+				Image::ResourceState{
+					.layout = vk::ImageLayout::eTransferDstOptimal,
+					.stage  = vk::PipelineStageFlagBits2::eTransfer,
+					.access = vk::AccessFlagBits2::eTransferWrite,
+					.queueFamily = mQueueFamily });
+
+		ExecuteBarriers();
+
+		mCommandBuffer.clearColorImage(**img, vk::ImageLayout::eTransferDstOptimal, clearValue, subresources);
+	}
+	inline void ClearColor(const ImageView& img, const vk::ClearColorValue& clearValue) {
+		ClearColor(img.mImage, clearValue, img.mSubresource);
+	}
+
+	#pragma endregion
+
 	inline void GenerateMipMaps(const ref<Image>& img, const vk::Filter filter = vk::Filter::eLinear, const vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor) {
-		vk::ImageBlit blit = {
+		vk::ImageBlit blit {
 			.srcSubresource = vk::ImageSubresourceLayers{
 				.aspectMask = aspect,
 				.baseArrayLayer = 0,
@@ -276,65 +336,53 @@ public:
 			.dstOffsets = std::array<vk::Offset3D, 2>{
 				vk::Offset3D{ 0, 0, 0 },
 				vk::Offset3D{ 0, 0, 0 } } };
-
 		for (uint32_t i = 1; i < img->Info().mipLevels; i++) {
-			AddBarrier(img,
-				vk::ImageSubresourceRange{
-					.aspectMask = aspect,
-					.baseMipLevel = i - 1,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = img->Info().arrayLayers },
-				Image::ResourceState{
-					.layout = vk::ImageLayout::eTransferSrcOptimal,
-					.stage  = vk::PipelineStageFlagBits2::eTransfer,
-					.access = vk::AccessFlagBits2::eTransferRead });
-			AddBarrier(img,
-				vk::ImageSubresourceRange{
-					.aspectMask = aspect,
-					.baseMipLevel = i,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = img->Info().arrayLayers },
-				Image::ResourceState{
-					.layout = vk::ImageLayout::eTransferDstOptimal,
-					.stage  = vk::PipelineStageFlagBits2::eTransfer,
-					.access = vk::AccessFlagBits2::eTransferWrite });
-			ExecuteBarriers();
-
 			blit.srcSubresource.mipLevel = i - 1;
 			blit.dstSubresource.mipLevel = i;
 			blit.dstOffsets[1].x = std::max(1, blit.srcOffsets[1].x / 2);
 			blit.dstOffsets[1].y = std::max(1, blit.srcOffsets[1].y / 2);
 			blit.dstOffsets[1].z = std::max(1, blit.srcOffsets[1].z / 2);
 
-			mCommandBuffer.blitImage(
-				**img, vk::ImageLayout::eTransferSrcOptimal,
-				**img, vk::ImageLayout::eTransferDstOptimal,
-				blit, vk::Filter::eLinear);
+			Blit(img, img, blit, vk::Filter::eLinear);
 
 			blit.srcOffsets[1] = blit.dstOffsets[1];
 		}
 	}
 
-	inline void ClearColor(const ref<Image>& img, const vk::ClearColorValue& clearValue, const vk::ArrayProxy<const vk::ImageSubresourceRange>& subresources) {
-		for (const auto& subresource : subresources)
-			AddBarrier(img,
-				subresource,
-				Image::ResourceState{
-					.layout = vk::ImageLayout::eTransferDstOptimal,
-					.stage  = vk::PipelineStageFlagBits2::eTransfer,
-					.access = vk::AccessFlagBits2::eTransferWrite });
+	template<std::ranges::contiguous_range R>
+	inline BufferView UploadData(R&& data, const vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eUniformBuffer) {
+		const size_t size = sizeof(std::ranges::range_value_t<R>) * data.size();
 
-		ExecuteBarriers();
+		BufferView hostBuffer = {};
+		BufferView buffer = {};
+		if (auto it_ = mCachedUploadBuffers.find(usage); it_ != mCachedUploadBuffers.end()) {
+			auto& q = it_->second;
+			if (!q.empty() && q.back().first.size() >= size) {
+				// find smallest cached buffer that can fit size
+				auto it = std::ranges::lower_bound(q, size, {}, [](const auto& b) { return b.first.size(); });
+				if (it != q.end()) {
+					std::tie(buffer, hostBuffer) = *it;
+					q.erase(it);
+				}
+			}
+		}
 
-		mCommandBuffer.clearColorImage(**img, vk::ImageLayout::eTransferDstOptimal, clearValue, subresources);
+		if (hostBuffer) {
+			std::memcpy(hostBuffer.data(), data.data(), size);
+		} else {
+			hostBuffer = Buffer::Create(*mDevice, data);
+			buffer = Buffer::Create(
+				*mDevice,
+				size,
+				usage | vk::BufferUsageFlagBits::eTransferDst,
+				vk::MemoryPropertyFlagBits::eDeviceLocal,
+				VMA_ALLOCATION_CREATE_STRATEGY_MIN_TIME_BIT);
+		}
+
+		Copy(hostBuffer, buffer);
+
+		return mNewCachedUploadBuffers.emplace_back(buffer, hostBuffer).first;
 	}
-	inline void ClearColor(const ImageView& img, const vk::ClearColorValue& clearValue) {
-		ClearColor(img.mImage, clearValue, img.mSubresource);
-	}
-
-	#pragma endregion
 };
 
 }
