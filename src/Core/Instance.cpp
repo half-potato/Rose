@@ -66,7 +66,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBi
 	return VK_FALSE;
 }
 
-ref<Instance> Instance::Create(const std::vector<std::string>& extensions, const std::vector<std::string>& layers) {
+ref<Instance> Instance::Create(const vk::ArrayProxy<const std::string>& extensions, const vk::ArrayProxy<const std::string>& layers) {
 	auto instance = make_ref<Instance>();
 
 	instance->mContext = vk::raii::Context();

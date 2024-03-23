@@ -125,6 +125,7 @@ struct BufferRange {
 	template<typename Ty> inline BufferRange<Ty> cast() const { return BufferRange<Ty>{ mBuffer, mOffset, size_bytes() / sizeof(Ty) }; }
 	template<typename Ty> inline operator BufferRange<Ty>() const { return cast<Ty>(); }
 
+	inline bool operator==(const BufferRange& rhs) const = default;
 
 	inline const Buffer::ResourceState& GetState() const {
 		return mBuffer->GetState(mOffset, size_bytes());

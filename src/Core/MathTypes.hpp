@@ -31,10 +31,14 @@ using glm::double3x3;
 using glm::double4x4;
 using glm::double4x3;
 using glm::double3x4;
+
+using glm::quat;
+
 using glm::dot;
 using glm::cross;
 using glm::normalize;
 using glm::abs;
+using glm::sign;
 using glm::min;
 using glm::max;
 using glm::clamp;

@@ -48,7 +48,7 @@ void ConfigureFeatures(Device& device, auto& features, auto& createInfo) {
 	std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(createInfo).rayQuery = device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 }
 
-ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const std::vector<std::string>& deviceExtensions) {
+ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const vk::ArrayProxy<const std::string>& deviceExtensions) {
 	ref<Device> device = make_ref<Device>();
 
 	device->mPhysicalDevice = physicalDevice;
@@ -129,50 +129,6 @@ Device::~Device() {
 		vmaDestroyAllocator(mMemoryAllocator);
 		mMemoryAllocator = nullptr;
 	}
-}
-
-vk::CommandPool Device::GetCommandPool(uint32_t queueFamily) {
-	auto it = mCachedCommandPools.find(queueFamily);
-	if (it == mCachedCommandPools.end())
-		it = mCachedCommandPools.emplace(queueFamily, mDevice.createCommandPool(vk::CommandPoolCreateInfo{
-			.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-			.queueFamilyIndex = queueFamily
-		})).first;
-	return *it->second;
-}
-
-void Device::AllocateDescriptorPool() {
-	std::vector<vk::DescriptorPoolSize> poolSizes {
-		vk::DescriptorPoolSize{ vk::DescriptorType::eSampler,              std::min(16384u, mLimits.maxDescriptorSetSamplers) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eCombinedImageSampler, std::min(16384u, mLimits.maxDescriptorSetSampledImages) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eInputAttachment,      std::min(16384u, mLimits.maxDescriptorSetInputAttachments) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eSampledImage,         std::min(16384u, mLimits.maxDescriptorSetSampledImages) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eStorageImage,         std::min(16384u, mLimits.maxDescriptorSetStorageImages) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eUniformBuffer,        std::min(16384u, mLimits.maxDescriptorSetUniformBuffers) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eUniformBufferDynamic, std::min(16384u, mLimits.maxDescriptorSetUniformBuffersDynamic) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eStorageBuffer,        std::min(16384u, mLimits.maxDescriptorSetStorageBuffers) },
-		vk::DescriptorPoolSize{ vk::DescriptorType::eStorageBufferDynamic, std::min(16384u, mLimits.maxDescriptorSetStorageBuffersDynamic) }
-	};
-	mCachedDescriptorPools.push_front(mDevice.createDescriptorPool(
-		vk::DescriptorPoolCreateInfo{
-			.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-			.maxSets = 8192 }
-		.setPoolSizes(poolSizes)));
-}
-
-DescriptorSets Device::AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts) {
-	if (mCachedDescriptorPools.empty())
-		AllocateDescriptorPool();
-
-	std::vector<vk::raii::DescriptorSet> sets;
-	try {
-		sets = mDevice.allocateDescriptorSets(vk::DescriptorSetAllocateInfo{.descriptorPool = *mCachedDescriptorPools.front() }.setSetLayouts(layouts));
-	} catch(vk::OutOfPoolMemoryError e) {
-		AllocateDescriptorPool();
-		sets = mDevice.allocateDescriptorSets(vk::DescriptorSetAllocateInfo{.descriptorPool = *mCachedDescriptorPools.front() }.setSetLayouts(layouts));
-	}
-
-	return sets;
 }
 
 void Device::LoadPipelineCache(const std::filesystem::path& path) {

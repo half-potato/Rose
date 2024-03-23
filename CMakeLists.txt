@@ -42,9 +42,11 @@ link_libraries(Vulkan::Vulkan)
 link_libraries(glm)
 
 
-file(GLOB_RECURSE SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
+file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
+file(GLOB_RECURSE SCENE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Scene/**.cpp")
 add_library(RoseLib
-	${SRCS}
+	${CORE_SRCS}
+	${SCENE_SRCS}
 	thirdparty/miniz.c
 	thirdparty/pugixml.cpp
 	thirdparty/imgui/imgui_demo.cpp
@@ -106,3 +108,8 @@ add_executable(test_program src/tests/program.cpp)
 target_link_libraries(test_program RoseLib)
 add_test(program bin/test_program)
 set_tests_properties(program PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")
+
+add_executable(test_mesh src/tests/mesh.cpp)
+target_link_libraries(test_mesh RoseLib)
+add_test(mesh bin/test_mesh)
+set_tests_properties(mesh PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")

@@ -9,7 +9,7 @@ namespace RoseEngine {
 
 class Instance;
 
-using DescriptorSets = std::vector<vk::raii::DescriptorSet>;
+class CommandContext;
 
 class Device {
 private:
@@ -39,15 +39,10 @@ private:
 
 	bool mUseDebugUtils = false;
 
-	std::unordered_map<uint32_t/*queue family*/, vk::raii::CommandPool> mCachedCommandPools;
-
-	std::list<vk::raii::DescriptorPool> mCachedDescriptorPools;
-	void AllocateDescriptorPool();
-
 public:
 	~Device();
 
-	static ref<Device> Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const std::vector<std::string>& deviceExtensions = {});
+	static ref<Device> Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const vk::ArrayProxy<const std::string>& deviceExtensions = {});
 
 	inline       vk::raii::Device& operator*()        { return mDevice; }
 	inline const vk::raii::Device& operator*() const  { return mDevice; }
@@ -64,8 +59,6 @@ public:
 	inline const vk::PhysicalDeviceLimits&        Limits() const { return mLimits; }
 	inline const std::unordered_set<std::string>& EnabledExtensions() const { return mExtensions; }
 
-	vk::CommandPool GetCommandPool(uint32_t queueFamily);
-
 	inline uint32_t FindQueueFamily(const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
 		uint32_t min_i = -1;
 		uint32_t min_bits = UINT32_MAX;
@@ -79,8 +72,6 @@ public:
 		}
 		return min_i;
 	}
-
-	DescriptorSets AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts);
 
 	inline const vk::raii::Semaphore& TimelineSemaphore() const { return mTimelineSemaphore; }
 	inline uint64_t CurrentTimelineValue() const { return mTimelineSemaphore.getCounterValue(); }

@@ -1,5 +1,5 @@
 #include "Core/Instance.hpp"
-#include "Core/Program.hpp"
+#include "Core/CommandContext.hpp"
 
 #include <iostream>
 
@@ -19,21 +19,21 @@ int main(int argc, char** argv) {
 	float scale2  =  3.0f;
 	float offset2 = -0.5f;
 
-	auto test = Program::Create(*device, FindShaderPath("Test.slang"));
+	auto test = Pipeline::CreateCompute(*device, ShaderModule::Create(*device, FindShaderPath("Test.slang")));
 
 	auto dataGpu = Buffer::Create(*device, dataCpu.size_bytes());
-	auto& root = test->RootParameter();
-	root["scale"] = scale;
-	root["offset"] = offset;
-	root["scale2"] = scale2;
-	root["offset2"] = offset2;
-	root["data"] = dataGpu;
+	ShaderParameter params;
+	params["scale"] = scale;
+	params["offset"] = offset;
+	params["scale2"] = scale2;
+	params["offset2"] = offset2;
+	params["data"] = dataGpu;
 
 	ref<CommandContext> context = CommandContext::Create(device, vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer);
 	context->Begin();
 
 	context->Copy(dataCpu, dataGpu);
-	test->Dispatch(*context, (uint32_t)inputData.size());
+	context->Dispatch(*test, (uint32_t)inputData.size(), params);
 	context->Copy(dataGpu, dataCpu);
 
 	uint64_t value = context->Submit();

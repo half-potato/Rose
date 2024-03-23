@@ -171,6 +171,19 @@ void Gui::Initialize(const ref<Device>& device, const Window& window, const Swap
 
 	ImGui::CreateContext();
 
+	// Setup Dear ImGui style
+	float scale = 1.25f;
+	ImGui::GetStyle().ScaleAllSizes(scale);
+	ImGui::GetStyle().IndentSpacing /= scale;
+	ImGui::GetStyle().IndentSpacing *= 0.75f;
+	ImGui::GetStyle().WindowRounding = 4.0f;
+	ImGui::GetStyle().GrabRounding   = 4.0f;
+
+	StyleColorsSpectrum();
+
+	ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
+
 	ImGui_ImplGlfw_InitForVulkan(window.GetWindow(), true);
 
 	// create renderpass
@@ -213,16 +226,6 @@ void Gui::Initialize(const ref<Device>& device, const Window& window, const Swap
 			.maxSets = 8192 }
 		.setPoolSizes(poolSizes)));
 
-	// Setup Dear ImGui style
-	ImGui::GetStyle().WindowRounding = 4.0f;
-	ImGui::GetStyle().GrabRounding   = 4.0f;
-	ImGui::GetStyle().IndentSpacing *= 0.75f;
-
-	StyleColorsSpectrum();
-
-	ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-	ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
-
 	ImGui_ImplVulkan_InitInfo init_info = {
 		.Instance = device->GetInstance(),
 		.PhysicalDevice = *device->PhysicalDevice(),
@@ -241,7 +244,8 @@ void Gui::Initialize(const ref<Device>& device, const Window& window, const Swap
 
 	// Upload Fonts
 
-	mHeaderFont = ImGui::GetFont();
+	ImGui::GetIO().Fonts->AddFontFromFileTTF("DroidSans.ttf", 16.f);
+	mHeaderFont = ImGui::GetIO().Fonts->AddFontFromFileTTF("DroidSans.ttf", 20.f);
 
 	ref<CommandContext> context = CommandContext::Create(device, mQueueFamily);
 	context->Begin();
@@ -307,7 +311,7 @@ void Gui::Render(CommandContext& context, const ImageView& renderTarget) {
 	context.AddBarrier(renderTarget, Image::ResourceState{
 		.layout = vk::ImageLayout::eColorAttachmentOptimal,
 		.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		.access = vk::AccessFlagBits2::eColorAttachmentRead,
+		.access = vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
 		.queueFamily = context.QueueFamily() });
 	context.ExecuteBarriers();
 	context->beginRenderPass(

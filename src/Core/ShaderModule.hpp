@@ -7,21 +7,12 @@
 #include <source_location>
 
 #include "Device.hpp"
+#include "MathTypes.hpp"
 #include "ParameterMap.hpp"
 
 namespace RoseEngine {
 
 #define FindShaderPath(name) (std::filesystem::path(std::source_location::current().file_name()).parent_path() / name)
-
-inline std::vector<std::filesystem::path> GetDefaultSearchPaths() {
-	const char* file = std::source_location::current().file_name();
-	auto core = std::filesystem::path( file ).parent_path();
-	auto src  = core.parent_path();
-	return {
-		src,
-		src.parent_path() / "thirdparty"
-	};
-}
 
 struct ShaderDescriptorBinding {
 	vk::DescriptorType descriptorType = {};
@@ -53,11 +44,17 @@ struct ShaderConstantBinding {
 	}
 	inline bool operator!=(const ShaderConstantBinding& rhs) const { return !operator==(rhs); }
 };
+struct ShaderVertexAttributeBinding {
+	uint32_t location = 0;
+	std::string semantic = {};
+	uint32_t semanticIndex = {};
+};
 
-using ShaderParameterBinding = ParameterMap<std::monostate, ShaderDescriptorBinding, ShaderConstantBinding>;
+using ShaderParameterBinding = ParameterMap<std::monostate, ShaderDescriptorBinding, ShaderConstantBinding, ShaderVertexAttributeBinding>;
 using ShaderDefines = NameMap<std::string>;
 
-struct ShaderModule {
+class ShaderModule {
+private:
 	vk::raii::ShaderModule mModule = nullptr;
 	size_t mSpirvHash = 0;
 
@@ -67,7 +64,7 @@ struct ShaderModule {
 	vk::ShaderStageFlagBits mStage = {};
 
 	// Only valid for compute shaders
-	vk::Extent3D mWorkgroupSize = {};
+	uint3 mWorkgroupSize = {};
 
 	std::vector<std::string> mEntryPointArguments = {};
 	NameMap<vk::DeviceSize>  mUniformBufferSizes = {};
@@ -88,7 +85,7 @@ public:
 	inline const vk::raii::ShaderModule* operator->() const { return &mModule; }
 
 	inline vk::ShaderStageFlagBits       Stage() const { return mStage; }
-	inline vk::Extent3D                  WorkgroupSize() const { return mWorkgroupSize; }
+	inline uint3                         WorkgroupSize() const { return mWorkgroupSize; }
 	inline const ShaderParameterBinding& RootBinding() const { return mRootBinding; }
 	inline const auto&                   EntryPointArguments() const { return mEntryPointArguments; }
 

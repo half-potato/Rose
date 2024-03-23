@@ -130,16 +130,18 @@ inline void PrintBinding(const ShaderParameterBinding& binding, uint32_t depth =
 	}
 }
 
-ref<PipelineLayout> PipelineLayout::Create(const Device& device, const ShaderStageMap& shaders, const PipelineLayoutInfo& info, const DescriptorSetLayouts& descriptorSetLayouts) {
+ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::ArrayProxy<const ref<const ShaderModule>>& shaders, const PipelineLayoutInfo& info, const DescriptorSetLayouts& descriptorSetLayouts) {
 	auto layout = make_ref<PipelineLayout>();
 	layout->mInfo = info;
-
 	layout->mRootBinding = ShaderParameterBinding{};
 
 	PipelineBindings bindings = {};
 
-	for (const auto&[stage, shader] : shaders)
-		bindings.AddBindings(layout->mRootBinding, shader->RootBinding(), stage, info);
+	layout->mStageMask = (vk::ShaderStageFlagBits)0;
+	for (const auto& shader : shaders) {
+		bindings.AddBindings(layout->mRootBinding, shader->RootBinding(), shader->Stage(), info);
+		layout->mStageMask |= shader->Stage();
+	}
 
 	//PrintBinding(layout->mRootBinding);
 
@@ -189,27 +191,10 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const ShaderSta
 	return layout;
 }
 
-ref<Pipeline> Pipeline::CreateCompute(const Device& device, const ref<const ShaderModule>& shader, const PipelineInfo& info, const PipelineLayoutInfo& layoutInfo, const DescriptorSetLayouts& descriptorSetLayouts) {
-	ref<Pipeline> pipeline = make_ref<Pipeline>();
-	pipeline->mShaders = { { shader->mStage, shader } };
-	pipeline->mLayout = PipelineLayout::Create(device, pipeline->mShaders, layoutInfo, descriptorSetLayouts);
-	pipeline->mInfo = info;
-	pipeline->mPipeline = device->createComputePipeline(device.PipelineCache(), vk::ComputePipelineCreateInfo{
-		.flags = info.flags,
-		.stage = vk::PipelineShaderStageCreateInfo{
-			.flags = info.stageFlags,
-			.stage = vk::ShaderStageFlagBits::eCompute,
-			.module = ***shader,
-			.pName = "main" },
-		.layout = ***pipeline->mLayout });
-	return pipeline;
-}
-
-ref<Pipeline> Pipeline::CreateCompute(const Device& device, const ref<const ShaderModule>& shader, const ref<PipelineLayout>& layout, const PipelineInfo& info) {
+ref<Pipeline> Pipeline::CreateCompute(const Device& device, const ref<const ShaderModule>& shader, const ref<PipelineLayout>& layout, const ComputePipelineInfo& info) {
 	ref<Pipeline> pipeline = make_ref<Pipeline>();
 	pipeline->mLayout = layout;
-	pipeline->mInfo = info;
-	pipeline->mShaders = { { shader->mStage, shader } };
+	pipeline->mShaders = { shader };
 	pipeline->mPipeline = device->createComputePipeline(device.PipelineCache(), vk::ComputePipelineCreateInfo{
 		.flags = info.flags,
 		.stage = vk::PipelineShaderStageCreateInfo{
@@ -218,6 +203,80 @@ ref<Pipeline> Pipeline::CreateCompute(const Device& device, const ref<const Shad
 			.module = ***shader,
 			.pName = "main" },
 		.layout = ***layout });
+	return pipeline;
+}
+
+ref<Pipeline> Pipeline::CreateCompute(const Device& device, const ref<const ShaderModule>& shader, const ComputePipelineInfo& info, const PipelineLayoutInfo& layoutInfo, const DescriptorSetLayouts& descriptorSetLayouts) {
+	auto layout = PipelineLayout::Create(device, shader, layoutInfo, descriptorSetLayouts);
+	return CreateCompute(device, shader, layout, info);
+}
+
+
+ref<Pipeline> Pipeline::CreateGraphics(const Device& device, const ref<const ShaderModule>& vertexShader, const ref<const ShaderModule>& fragmentShader, const GraphicsPipelineInfo& info, const PipelineLayoutInfo& layoutInfo, const DescriptorSetLayouts& descriptorSetLayouts) {
+	// Pipeline constructor creates mLayout, mDescriptorSetLayouts, and mDescriptorMap
+
+	// create pipeline
+	ref<Pipeline> pipeline = make_ref<Pipeline>();
+	pipeline->mLayout = PipelineLayout::Create(device, { vertexShader, fragmentShader }, layoutInfo, descriptorSetLayouts);
+	pipeline->mShaders = { vertexShader, fragmentShader };
+
+	std::vector<vk::PipelineShaderStageCreateInfo> stages;
+	for (const auto& shader : { vertexShader, fragmentShader })
+		stages.emplace_back(vk::PipelineShaderStageCreateInfo{
+			.flags = info.stageFlags,
+			.stage = shader->Stage(),
+			.module = ***shader,
+			.pName = "main" });
+
+	vk::PipelineRenderingCreateInfo dynamicRenderingState = {};
+	if (info.dynamicRenderingState) {
+		dynamicRenderingState = vk::PipelineRenderingCreateInfo{
+			.viewMask = info.dynamicRenderingState->viewMask,
+			.depthAttachmentFormat = info.dynamicRenderingState->depthFormat,
+			.stencilAttachmentFormat = info.dynamicRenderingState->stencilFormat };
+		dynamicRenderingState.setColorAttachmentFormats(info.dynamicRenderingState->colorFormats);
+	}
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputState = {};
+	if (info.vertexInputState) {
+		vertexInputState.setVertexBindingDescriptions(info.vertexInputState->bindings);
+		vertexInputState.setVertexAttributeDescriptions(info.vertexInputState->attributes);
+	}
+
+	vk::PipelineViewportStateCreateInfo viewportState = {};
+	viewportState.setViewports(info.viewports);
+	viewportState.setScissors(info.scissors);
+
+	vk::PipelineColorBlendStateCreateInfo colorBlendState = {};
+	if (info.colorBlendState) {
+		colorBlendState = vk::PipelineColorBlendStateCreateInfo{
+			.logicOpEnable   = info.colorBlendState->logicOpEnable,
+			.logicOp         = info.colorBlendState->logicOp,
+			.blendConstants  = info.colorBlendState->blendConstants };
+		colorBlendState.setAttachments(info.colorBlendState->attachments);
+	}
+
+	vk::PipelineDynamicStateCreateInfo dynamicState = {};
+	dynamicState.setDynamicStates(info.dynamicStates);
+
+	vk::GraphicsPipelineCreateInfo createInfo = {
+		.pNext               = info.dynamicRenderingState.has_value() ? &dynamicRenderingState : nullptr,
+		.flags               = info.flags,
+		.pVertexInputState   = info.vertexInputState.has_value()   ? &vertexInputState : nullptr,
+		.pInputAssemblyState = info.inputAssemblyState.has_value() ? &info.inputAssemblyState.value() : nullptr,
+		.pTessellationState  = info.tessellationState.has_value()  ? &info.tessellationState.value()  : nullptr,
+		.pViewportState      = &viewportState,
+		.pRasterizationState = info.rasterizationState.has_value() ? &info.rasterizationState.value() : nullptr,
+		.pMultisampleState   = info.multisampleState.has_value()   ? &info.multisampleState.value()   : nullptr,
+		.pDepthStencilState  = info.depthStencilState.has_value()  ? &info.depthStencilState.value()  : nullptr,
+		.pColorBlendState    = info.colorBlendState.has_value()    ? &colorBlendState                 : nullptr,
+		.pDynamicState       = &dynamicState,
+		.layout              = ***pipeline->mLayout,
+		.renderPass          = info.renderPass,
+		.subpass             = info.subpassIndex };
+	createInfo.setStages(stages);
+	pipeline->mPipeline = device->createGraphicsPipeline(device.PipelineCache(), createInfo);
+
 	return pipeline;
 }
 

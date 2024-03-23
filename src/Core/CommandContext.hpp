@@ -1,24 +1,86 @@
 #pragma once
 
-#include "TransientResourceCache.hpp"
 #include "Buffer.hpp"
 #include "Image.hpp"
+#include "Pipeline.hpp"
+#include "ParameterMap.hpp"
+#include "TransientResourceCache.hpp"
 
 namespace RoseEngine {
+
+// represents a uniform or push constant
+class ConstantParameter : public std::vector<std::byte> {
+public:
+	template<typename T>
+	inline ConstantParameter(const T& value) {
+		resize(sizeof(value));
+		*reinterpret_cast<T*>(data()) = value;
+	}
+
+	ConstantParameter() = default;
+	ConstantParameter(ConstantParameter&&) = default;
+	ConstantParameter(const ConstantParameter&) = default;
+	ConstantParameter& operator=(ConstantParameter&&) = default;
+	ConstantParameter& operator=(const ConstantParameter&) = default;
+
+	template<typename T>
+	inline T& get() {
+		if (empty())
+			resize(sizeof(T));
+		return *reinterpret_cast<T*>(data());
+	}
+
+	template<typename T>
+	inline const T& get() const {
+		return *reinterpret_cast<const T*>(data());
+	}
+
+	template<typename T>
+	inline T& operator=(const T& value) {
+		resize(sizeof(value));
+		return *reinterpret_cast<T*>(data()) = value;
+	}
+};
+using BufferParameter = BufferView;
+struct ImageParameter {
+	ImageView              image;
+	vk::ImageLayout        imageLayout;
+	vk::AccessFlags        imageAccess;
+	ref<vk::raii::Sampler> sampler;
+};
+using AccelerationStructureParameter = ref<vk::raii::AccelerationStructureKHR>;
+using ShaderParameter = ParameterMap<
+	std::monostate,
+	ConstantParameter,
+	BufferParameter,
+	ImageParameter,
+	AccelerationStructureParameter >;
+
+template<typename T>
+concept shader_parameter = one_of<T, ShaderParameter, ConstantParameter, BufferParameter, ImageParameter, AccelerationStructureParameter>;
+
+using DescriptorSets = std::vector<vk::raii::DescriptorSet>;
 
 class CommandContext {
 private:
 	vk::raii::CommandBuffer mCommandBuffer = nullptr;
+	vk::raii::CommandPool   mCommandPool = nullptr;
 	ref<Device> mDevice = {};
 	uint32_t mQueueFamily = {};
-	TransientResourceCache<vk::raii::CommandBuffer> mCommandBufferCache = {};
 
 	std::vector<vk::BufferMemoryBarrier2> mBufferBarrierQueue = {};
 	std::vector<vk::ImageMemoryBarrier2>  mImageBarrierQueue = {};
 
+	TransientResourceCache<vk::raii::CommandBuffer> mCachedCommandBuffers = {};
+	TransientResourceCache<ref<DescriptorSets>> mCachedDescriptorSets;
+	std::list<vk::raii::DescriptorPool> mCachedDescriptorPools;
+
 	using CachedUploadBuffers = std::pair<BufferView, BufferView>;
 	std::unordered_map<vk::BufferUsageFlags, std::vector<CachedUploadBuffers>> mCachedUploadBuffers = {};
 	std::vector<CachedUploadBuffers> mNewCachedUploadBuffers = {};
+
+	void AllocateDescriptorPool();
+	DescriptorSets AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts);
 
 public:
 	inline       vk::raii::CommandBuffer& operator*()        { return mCommandBuffer; }
@@ -26,40 +88,20 @@ public:
 	inline       vk::raii::CommandBuffer* operator->()       { return &mCommandBuffer; }
 	inline const vk::raii::CommandBuffer* operator->() const { return &mCommandBuffer; }
 
-	inline static ref<CommandContext> Create(const ref<Device>& device, const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
-		ref<CommandContext> context = make_ref<CommandContext>();
-		context->mDevice = device;
-		context->mQueueFamily = device->FindQueueFamily(flags);
-		return context;
-	}
 	inline static ref<CommandContext> Create(const ref<Device>& device, uint32_t queueFamily) {
 		ref<CommandContext> context = make_ref<CommandContext>();
 		context->mDevice = device;
 		context->mQueueFamily = queueFamily;
 		return context;
 	}
+	inline static ref<CommandContext> Create(const ref<Device>& device, const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
+		return Create(device, device->FindQueueFamily(flags));
+	}
 
 	inline Device& GetDevice() const { return *mDevice; }
 	inline uint32_t QueueFamily() const { return mQueueFamily; }
 
-	inline void Begin() {
-		mCommandBuffer = mCommandBufferCache.pop_or_create(*mDevice, [&](){
-			auto commandBuffers = (*mDevice)->allocateCommandBuffers(vk::CommandBufferAllocateInfo{
-				.commandPool = mDevice->GetCommandPool(mQueueFamily),
-				.level = vk::CommandBufferLevel::ePrimary,
-				.commandBufferCount = 1 });
-			return std::move(commandBuffers[0]);
-		});
-
-		mCommandBuffer.reset();
-		mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
-
-		for (auto& b : mNewCachedUploadBuffers)
-			mCachedUploadBuffers[b.second.mBuffer->Usage()].emplace_back(std::move(b));
-		mNewCachedUploadBuffers.clear();
-		for (auto& [usage, bufs] : mCachedUploadBuffers)
-			std::ranges::sort(bufs, [](const auto& lhs, const auto& rhs) { return lhs.first.size() < rhs.first.size(); });
-	}
+	void Begin();
 
 	// Signals the device's timeline semaphore upon completion. Returns the signal value.
 	inline uint64_t Submit(
@@ -94,9 +136,14 @@ public:
 
 		(*mDevice)->getQueue(mQueueFamily, queueIndex).submit( submitInfo );
 
-		mCommandBufferCache.push(std::move(mCommandBuffer), values[0]);
+		mCachedCommandBuffers.push(std::move(mCommandBuffer), values[0]);
 		return values[0];
 	}
+
+	void UpdateDescriptorSets(const DescriptorSets& descriptorSets, const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout);
+	ref<DescriptorSets> GetDescriptorSets(const PipelineLayout& pipelineLayout);
+	void PushConstants(const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout) const;
+	void BindParameters(const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout, ref<DescriptorSets> descriptorSets = nullptr);
 
 	#pragma region Barriers
 
@@ -130,7 +177,6 @@ public:
 		if (!(oldState.access & gWriteAccesses) && !(newState.access & gWriteAccesses))
 			return;
 		AddBarrier(buffer.SetState(newState));
-
 	}
 	inline void AddBarrier(const ref<Image>& img, const vk::ImageSubresourceRange& subresource, const Image::ResourceState& newState) {
 		auto barriers = img->SetSubresourceState(subresource, newState);
@@ -145,7 +191,7 @@ public:
 
 	#pragma endregion
 
-	#pragma region Copy, Fill, ClearColor
+	#pragma region Resource manipulation
 
 	template<typename T> requires(sizeof(T) == sizeof(uint32_t))
 	inline void Fill(const BufferRange<T>& buffer, const T data, const vk::DeviceSize offset = 0, const vk::DeviceSize size = VK_WHOLE_SIZE) {
@@ -321,8 +367,6 @@ public:
 		ClearColor(img.mImage, clearValue, img.mSubresource);
 	}
 
-	#pragma endregion
-
 	inline void GenerateMipMaps(const ref<Image>& img, const vk::Filter filter = vk::Filter::eLinear, const vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor) {
 		vk::ImageBlit blit {
 			.srcSubresource = vk::ImageSubresourceLayers{
@@ -377,12 +421,31 @@ public:
 				usage | vk::BufferUsageFlagBits::eTransferDst,
 				vk::MemoryPropertyFlagBits::eDeviceLocal,
 				VMA_ALLOCATION_CREATE_STRATEGY_MIN_TIME_BIT);
+			mDevice->SetDebugName(**hostBuffer.mBuffer, "Transient uniform buffer (host)");
+			mDevice->SetDebugName(**buffer.mBuffer, "Transient uniform buffer");
 		}
 
 		Copy(hostBuffer, buffer);
 
 		return mNewCachedUploadBuffers.emplace_back(buffer, hostBuffer).first;
 	}
+
+	#pragma endregion
+
+	#pragma region Dispatch
+
+	void Dispatch(Pipeline& pipeline, const uint3 threadCount, const ShaderParameter& rootParameter) {
+		mCommandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline);
+		BindParameters(rootParameter, *pipeline.Layout());
+		ExecuteBarriers();
+		auto dim = GetDispatchDim(pipeline.GetShader(vk::ShaderStageFlagBits::eCompute)->WorkgroupSize(), threadCount);
+		mCommandBuffer.dispatch(dim.x, dim.y, dim.z);
+	}
+
+	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1)   , rootParameter); }
+	void Dispatch(Pipeline& pipeline, const uint32_t threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1, 1), rootParameter); }
+
+	#pragma endregion
 };
 
 }

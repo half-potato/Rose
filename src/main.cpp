@@ -1,19 +1,256 @@
 #include <iostream>
 
-#include "Core/Instance.hpp"
-#include "Core/Program.hpp"
-#include "Core/Window.hpp"
-#include "Core/Gui.hpp"
+#include <Core/Instance.hpp>
+#include <Core/CommandContext.hpp>
+#include <Core/Window.hpp>
+#include <Core/Gui.hpp>
+
+#include <Scene/Mesh.hpp>
+#include <Scene/Transform.h>
+
+#include <ImGuizmo.h>
 
 using namespace RoseEngine;
 
+bool InspectorGui(Transform& v) {
+	bool changed = false;
+	float4x4 tmp = transpose(v.transform);
+	float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+	ImGuizmo::DecomposeMatrixToComponents(&tmp[0][0], matrixTranslation, matrixRotation, matrixScale);
+	if (ImGui::InputFloat3("Translation", matrixTranslation)) changed = true;
+	if (ImGui::InputFloat3("Rotation", matrixRotation)) changed = true;
+	if (ImGui::InputFloat3("Scale", matrixScale)) changed = true;
+	if (changed) {
+		ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, &tmp[0][0]);
+		v.transform = transpose(tmp);
+	}
+	return changed;
+}
+
+bool TransformGizmoGui(
+	Transform& transform,
+	const Transform& view,
+	const Transform& projection,
+	ImGuizmo::OPERATION operation = ImGuizmo::OPERATION::TRANSLATE,
+	bool local = false,
+	std::optional<float3> snap = std::nullopt) {
+	float4x4 t = transpose(transform.transform);
+	float4x4 v = transpose(view.transform);
+	float4x4 p = transpose(projection.transform);
+	const bool changed = ImGuizmo::Manipulate(
+		&v[0][0],
+		&p[0][0],
+		operation,
+		local ? ImGuizmo::MODE::LOCAL : ImGuizmo::MODE::WORLD,
+		&t[0][0],
+		NULL,
+		snap.has_value() ? &snap->x : NULL);
+	if (changed) transform.transform = transpose(t);
+	return changed;
+}
+
+struct Renderer {
+	Mesh          mesh = {};
+	MeshLayout    meshLayout = {};
+	ref<Pipeline> pipeline = {};
+
+	Transform meshTransform   = Transform::Identity();
+	float3    cameraPos = float3(0,0,1);
+	float2    cameraAngle = float2(0,0);
+	float     fovY  = 70.f; // in degrees
+	float     nearZ = 0.01f;
+
+	inline static Renderer Create(CommandContext& context) {
+		Renderer renderer = {};
+
+		context.Begin();
+
+		renderer.mesh = Mesh {
+			.indexBuffer = context.UploadData(std::vector<uint16_t>{ 0, 1, 2, 1, 3, 2 }, vk::BufferUsageFlagBits::eIndexBuffer),
+			.indexType = vk::IndexType::eUint16,
+			.topology = vk::PrimitiveTopology::eTriangleList };
+		renderer.mesh.vertexAttributes[MeshVertexAttributeType::ePosition].emplace_back(
+			context.UploadData(std::vector<float3>{
+					float3(-.25f, -.25f, 0), float3(.25f, -.25f, 0),
+					float3(-.25f,  .25f, 0), float3(.25f,  .25f, 0),
+				}, vk::BufferUsageFlagBits::eVertexBuffer),
+			MeshVertexAttributeLayout{
+				.stride = sizeof(float3),
+				.format = vk::Format::eR32G32B32Sfloat,
+				.offset = 0,
+				.inputRate = vk::VertexInputRate::eVertex });
+		renderer.mesh.vertexAttributes[MeshVertexAttributeType::eColor].emplace_back(
+			context.UploadData(std::vector<float3>{
+					float3(0.5f, 0.5f, 0), float3(1.0f, 0.5f, 0),
+					float3(0.5f, 1.0f, 0), float3(1.0f, 1.0f, 0),
+				}, vk::BufferUsageFlagBits::eVertexBuffer),
+			MeshVertexAttributeLayout{
+				.stride = sizeof(float3),
+				.format = vk::Format::eR32G32B32Sfloat,
+				.offset = 0,
+				.inputRate = vk::VertexInputRate::eVertex });
+
+		context.Submit();
+
+		return renderer;
+	}
+
+	inline void CreatePipeline(Device& device, vk::Format format) {
+		ref<const ShaderModule> vertexShader, fragmentShader;
+		if (pipeline) {
+			vertexShader   = pipeline->GetShader(vk::ShaderStageFlagBits::eVertex);
+			fragmentShader = pipeline->GetShader(vk::ShaderStageFlagBits::eFragment);
+		}
+		if (!vertexShader || vertexShader->IsStale()) {
+			vertexShader   = ShaderModule::Create(device, FindShaderPath("Test.3d.slang"), "vertexMain");
+			meshLayout = mesh.GetLayout(*vertexShader);
+		}
+		if (!fragmentShader || fragmentShader->IsStale())
+			fragmentShader = ShaderModule::Create(device, FindShaderPath("Test.3d.slang"), "fragmentMain");
+
+		// get vertex buffer bindings from the mesh layout
+
+		GraphicsPipelineInfo pipelineInfo {
+			.vertexInputState = VertexInputDescription{
+				.bindings   = meshLayout.bindings,
+				.attributes = meshLayout.attributes },
+			.inputAssemblyState = vk::PipelineInputAssemblyStateCreateInfo{
+				.topology = vk::PrimitiveTopology::eTriangleList },
+			.rasterizationState = vk::PipelineRasterizationStateCreateInfo{
+				.depthClampEnable = false,
+				.rasterizerDiscardEnable = false,
+				.polygonMode = vk::PolygonMode::eFill,
+				.cullMode = vk::CullModeFlagBits::eNone,
+				.frontFace = vk::FrontFace::eCounterClockwise,
+				.depthBiasEnable = false },
+			.multisampleState = vk::PipelineMultisampleStateCreateInfo{},
+			.depthStencilState = vk::PipelineDepthStencilStateCreateInfo{
+				.depthTestEnable = false,
+				.depthWriteEnable = true,
+				.depthCompareOp = vk::CompareOp::eGreater,
+				.depthBoundsTestEnable = false,
+				.stencilTestEnable = false },
+			.viewports = { vk::Viewport{} },
+			.scissors = { vk::Rect2D{} },
+			.colorBlendState = ColorBlendState{
+				.attachments = { vk::PipelineColorBlendAttachmentState{
+					.blendEnable         = false,
+					.srcColorBlendFactor = vk::BlendFactor::eZero,
+					.dstColorBlendFactor = vk::BlendFactor::eOne,
+					.colorBlendOp        = vk::BlendOp::eAdd,
+					.srcAlphaBlendFactor = vk::BlendFactor::eZero,
+					.dstAlphaBlendFactor = vk::BlendFactor::eOne,
+					.alphaBlendOp        = vk::BlendOp::eAdd,
+					.colorWriteMask      = vk::ColorComponentFlags{vk::FlagTraits<vk::ColorComponentFlagBits>::allFlags} } } },
+			.dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor },
+			.dynamicRenderingState = DynamicRenderingState{
+				.colorFormats = { format },
+				.depthFormat = {} } };
+		pipeline = Pipeline::CreateGraphics(device, vertexShader, fragmentShader, pipelineInfo);
+	}
+
+	inline void Update(CommandContext& context, double dt) {
+		float3 move = float3(0,0,0);
+		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_W)) move += float3(0,0,-1);
+		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_S)) move += float3(0,0, 1);
+		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_D)) move += float3( 1,0,0);
+		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_A)) move += float3(-1,0,0);
+		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_Q)) move += float3(0,-1,0);
+		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_E)) move += float3(0, 1,0);
+		if (move != float3(0,0,0)) {
+			quat rx = glm::angleAxis( cameraAngle.x, float3(1,0,0));
+			quat ry = glm::angleAxis(-cameraAngle.y, float3(0,1,0));
+			cameraPos += (ry * rx) * normalize(move) * float(dt);
+		}
+
+		if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+			cameraAngle += float2(-ImGui::GetIO().MouseDelta.y, ImGui::GetIO().MouseDelta.x) * float(M_PI) / 1920.f;
+			cameraAngle.x = clamp(cameraAngle.x, -float(M_PI/2), float(M_PI/2));
+		}
+	}
+
+	inline void Render(CommandContext& context, const ImageView& renderTarget) {
+		quat rx = glm::angleAxis( cameraAngle.x, float3(1,0,0));
+		quat ry = glm::angleAxis(-cameraAngle.y, float3(0,1,0));
+		Transform cameraTransform = Transform{ .transform = transpose(float4x4(ry * rx)) } * Transform::Translate(cameraPos);
+
+		Transform view = inverse(cameraTransform);
+		Transform projection = Transform{ .transform = transpose( glm::infinitePerspective(glm::radians(fovY), (float)renderTarget.Extent().x / (float)renderTarget.Extent().y, nearZ) ) };
+		TransformGizmoGui(meshTransform, view, projection);
+
+		ShaderParameter params = {};
+		params["objectToWorld"] = meshTransform;
+		params["worldToCamera"] = view;
+		params["projection"]    = projection;
+
+		auto descriptorSets = context.GetDescriptorSets(*pipeline->Layout());
+		context.UpdateDescriptorSets(*descriptorSets, params, *pipeline->Layout());
+
+		context.AddBarrier(renderTarget, Image::ResourceState{
+			.layout = vk::ImageLayout::eColorAttachmentOptimal,
+			.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
+			.queueFamily = context.QueueFamily()
+		});
+		context.ExecuteBarriers();
+
+		vk::RenderingAttachmentInfo attachment {
+			.imageView = *renderTarget,
+			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.resolveMode = vk::ResolveModeFlagBits::eNone,
+			.resolveImageView = {},
+			.resolveImageLayout = vk::ImageLayout::eUndefined,
+			.loadOp  = vk::AttachmentLoadOp::eLoad,
+			.storeOp = vk::AttachmentStoreOp::eStore,
+			.clearValue = vk::ClearValue{vk::ClearColorValue{std::array<float,4>{}}} };
+		vk::RenderingInfo renderInfo {
+			.renderArea = vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ renderTarget.Extent().x, renderTarget.Extent().y } },
+			.layerCount = 1,
+			.viewMask = 0 };
+		renderInfo.setColorAttachments(attachment);
+		context->beginRendering(renderInfo);
+
+		context->setViewport(0, vk::Viewport{ 0, 0, (float)renderTarget.Extent().x, (float)renderTarget.Extent().y, 0, 1 });
+		context->setScissor(0, vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ renderTarget.Extent().x, renderTarget.Extent().y } } );
+
+		context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***pipeline);
+		context.BindParameters(params, *pipeline->Layout(), descriptorSets);
+		mesh.Bind(context, meshLayout);
+		context->drawIndexed(mesh.indexBuffer.size_bytes() / sizeof(uint16_t), 1, 0, 0, 0);
+
+		context->endRendering();
+		renderTarget.SetState(Image::ResourceState{
+			.layout = vk::ImageLayout::eColorAttachmentOptimal,
+			.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.access = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.queueFamily = context.QueueFamily() });
+
+	}
+};
+
+inline void InspectorGui(Renderer& renderer) {
+	if (ImGui::CollapsingHeader("Mesh")) {
+		ImGui::PushID("Mesh");
+		InspectorGui(renderer.meshTransform);
+		ImGui::PopID();
+	}
+	if (ImGui::CollapsingHeader("Camera")) {
+		ImGui::PushID("Camera");
+		ImGui::DragFloat3("Position", &renderer.cameraPos.x);
+		ImGui::DragFloat2("Angle", &renderer.cameraAngle.x);
+		Gui::ScalarField("Vertical field of view", &renderer.fovY);
+		Gui::ScalarField("Near Z", &renderer.nearZ);
+		ImGui::PopID();
+	}
+}
+
 class App {
 public:
-	ref<Instance>       instance = nullptr;
-	ref<Device>         device = nullptr;
-	ref<Window>         window = nullptr;
+	ref<Instance>       instance  = nullptr;
+	ref<Device>         device    = nullptr;
+	ref<Window>         window    = nullptr;
 	ref<Swapchain>      swapchain = nullptr;
-	ref<CommandContext> context = nullptr;
+	ref<CommandContext> context   = nullptr;
 
 	vk::raii::Semaphore commandSignalSemaphore = nullptr;
 
@@ -21,7 +258,11 @@ public:
 
 	std::unordered_map<std::string, bool> widgetStates;
 
-	float renderScale = 1;
+	double dt = 0;
+	double fps = 0;
+	std::chrono::high_resolution_clock::time_point lastFrame = {};
+
+	Renderer renderer = {};
 
 	inline App(std::span<const char*, std::dynamic_extent> args) {
 		std::vector<std::string> instanceExtensions;
@@ -37,8 +278,7 @@ public:
 		window    = Window::Create(*instance, "Rose", uint2(1920, 1080));
 		swapchain = Swapchain::Create(*device, *window->GetSurface());
 		context   = CommandContext::Create(device, presentQueueFamily);
-
-		Gui::Initialize(device, *window, *swapchain, presentQueueFamily);
+		renderer = Renderer::Create(*context);
 
 		commandSignalSemaphore = vk::raii::Semaphore(**device, vk::SemaphoreCreateInfo{});
 	}
@@ -47,14 +287,29 @@ public:
 		Gui::Destroy();
 	}
 
-	inline void Update() {
+	inline bool CreateSwapchain() {
+		device->Wait();
+		if (!swapchain->Recreate(*device, *window->GetSurface(), { presentQueueFamily }))
+			return false; // Window unavailable (minimized?)
+
+		Gui::Initialize(device, *window, *swapchain, presentQueueFamily);
+
+		renderer.CreatePipeline(*device, swapchain->GetFormat().format);
+
+		return true;
+	}
+
+	inline void DrawGui() {
 		// Menu bar
 		ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
 		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize), ImGuiCond_Always;
-		ImGui::Begin("Main Dockspace", nullptr, ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoBringToFrontOnFocus|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_MenuBar);
+		ImGui::Begin("Main Dockspace", nullptr, ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoBringToFrontOnFocus|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_MenuBar|ImGuiWindowFlags_NoBackground);
 
 		if (ImGui::BeginMenuBar()) {
 			if (ImGui::BeginMenu("File")) {
+				if (ImGui::MenuItem("Reload shaders")) {
+					renderer.CreatePipeline(*device, swapchain->GetFormat().format);
+				}
 				ImGui::EndMenu();
 			}
 			if (ImGui::BeginMenu("View")) {
@@ -141,9 +396,6 @@ public:
 					if (changed) window->Resize(e);
 				}
 
-				if (ImGui::SliderFloat("Render Scale", &renderScale, 0.125f, 1.5f))
-					device->Wait();
-
 				vk::SurfaceCapabilitiesKHR capabilities = device->PhysicalDevice().getSurfaceCapabilitiesKHR(*window->GetSurface());
 				ImGui::SetNextItemWidth(40);
 				uint32_t imageCount = swapchain->GetMinImageCount();
@@ -183,43 +435,65 @@ public:
 			}
 			ImGui::End();
 		}
+
+		if (bool& open = widgetStates["Profiler"]) {
+			if (ImGui::Begin("Profiler", &open)) {
+				ImGui::Text("%.1f fps (%.1f ms)", fps, 1000 / fps);
+			}
+			ImGui::End();
+		}
+
+		if (bool& open = widgetStates["Demo window"]) {
+			ImGui::ShowDemoWindow(&open);
+		}
+
+		if (bool& open = widgetStates["Renderer"]) {
+			if (ImGui::Begin("Renderer", &open)) {
+				InspectorGui(renderer);
+			}
+			ImGui::End();
+		}
+	}
+
+	inline void Update() {
+		if (ImGui::IsKeyPressed(ImGuiKey_F5, false))
+			renderer.CreatePipeline(*device, swapchain->GetFormat().format);
+		renderer.Update(*context, dt);
 	}
 
 	inline void Render(const ImageView& renderTarget) {
-		context->ClearColor(renderTarget, vk::ClearColorValue{ std::array<float,4>{ .8f, 1.f, 1.f, 1.f } });
+		context->ClearColor(renderTarget, vk::ClearColorValue{std::array<float,4>{ .5f, .7f, 1.f, 1.f }});
 
-		ImGui::ShowDemoWindow();
+		ImGuizmo::SetRect(0, 0, renderTarget.Extent().x, renderTarget.Extent().y);
+		ImGuizmo::SetID(0);
 
-		Gui::Render(*context, renderTarget);
-	}
-
-	inline bool AdvanceSwapchain() {
-		if (swapchain->Dirty() || window->GetExtent() != swapchain->Extent()) {
-			device->Wait();
-			if (!swapchain->Recreate(*device, *window->GetSurface(), { presentQueueFamily })) {
-				return false; // Window unavailable (minimized?)
-			}
-			Gui::Initialize(device, *window, *swapchain, presentQueueFamily);
-		}
-		return swapchain->AcquireImage();
+		renderer.Render(*context, renderTarget);
 	}
 
 	inline void DoFrame() {
+		// count fps
+		const auto now = std::chrono::high_resolution_clock::now();
+		dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFrame).count();
+		lastFrame = now;
+		fps = lerp(fps, 1.0 / dt, std::min(1.0, dt));
+
 		Gui::NewFrame();
 
 		context->Begin();
 
-		Update();
+		DrawGui();
 
+		Update();
 		Render(swapchain->CurrentImage());
+
+		Gui::Render(*context, swapchain->CurrentImage());
 
 		context->AddBarrier(swapchain->CurrentImage(), Image::ResourceState{
 			.layout = vk::ImageLayout::ePresentSrcKHR,
-			.stage  = vk::PipelineStageFlagBits2::eBottomOfPipe,
+			.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			.access = vk::AccessFlagBits2::eNone,
 			.queueFamily = presentQueueFamily });
 		context->ExecuteBarriers();
-
 		context->Submit(0,
 			*commandSignalSemaphore, (size_t)0,
 			swapchain->ImageAvailableSemaphore(),
@@ -228,18 +502,26 @@ public:
 
 		swapchain->Present(*(*device)->getQueue(presentQueueFamily, 0), *commandSignalSemaphore);
 	}
+
+	inline void Run() {
+		while (true) {
+			Window::PollEvents();
+			if (!window->IsOpen())
+				break;
+
+			if (swapchain->Dirty() || window->GetExtent() != swapchain->Extent()) {
+				if (!CreateSwapchain())
+					continue;
+			}
+
+			if (swapchain->AcquireImage())
+				DoFrame();
+		}
+	}
 };
 
 int main(int argc, const char** argv) {
 	App app(std::span { argv, (size_t)argc });
-
-	while (true) {
-		Window::PollEvents();
-		if (!app.window->IsOpen())
-			break;
-		if (app.AdvanceSwapchain())
-			app.DoFrame();
-	}
-
+	app.Run();
 	return EXIT_SUCCESS;
 }
