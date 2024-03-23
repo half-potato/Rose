@@ -9,14 +9,18 @@ template<typename T>
 struct TransientResourceCache  {
 	std::queue<std::pair<T, uint64_t>> mResources;
 
-	inline void push(T&& resource, uint64_t counterValue)      { mResources.push(std::make_pair(std::forward<T>(resource), counterValue)); }
-	inline void push(const T& resource, uint64_t counterValue) { mResources.push(std::make_pair(resource, counterValue)); }
+	inline void clear() {
+		while (!mResources.empty())
+			mResources.pop();
+	}
+	inline void push(T&& resource, uint64_t counterValue)      { mResources.emplace(std::make_pair(std::forward<T>(resource), counterValue)); }
+	inline void push(const T& resource, uint64_t counterValue) { mResources.emplace(std::make_pair(resource, counterValue)); }
 
 	inline bool can_pop(const Device& device) {
 		if (mResources.empty())
 			return false;
 		else
-			return mResources.front().second >= device.TimelineSemaphore().getCounterValue();
+			return device.TimelineSemaphore().getCounterValue() >= mResources.front().second;
 	}
 
 	inline T pop() {

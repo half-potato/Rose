@@ -79,6 +79,8 @@ bool Swapchain::Recreate(Device& device, vk::SurfaceKHR surface, const std::vect
 				.levelCount = 1,
 				.baseArrayLayer = 0,
 				.layerCount = 1 });
+		device.SetDebugName(**mImages[i].GetImage(), "Swapchain image " + std::to_string(i));
+		device.SetDebugName(*mImages[i], "Swapchain image view " + std::to_string(i));
 
 		if (!mImageAvailableSemaphores[i])
 			mImageAvailableSemaphores[i] = make_ref<vk::raii::Semaphore>(*device, vk::SemaphoreCreateInfo{});

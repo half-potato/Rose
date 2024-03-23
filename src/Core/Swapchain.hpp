@@ -27,7 +27,8 @@ public:
 	inline uint32_t             GetMinImageCount() const { return mMinImageCount; }
 	inline void                 SetMinImageCount(uint32_t count) { mMinImageCount = count; mDirty = true; }
 
-	inline uint32_t         ImageCount() const { return (uint32_t)mImages.size(); }
+	inline uint32_t ImageCount() const { return (uint32_t)mImages.size(); }
+	inline uint32_t ImageIndex() const { return mImageIndex; }
 	inline const ImageView& CurrentImage() const { return mImages[mImageIndex]; }
 	inline vk::Semaphore    ImageAvailableSemaphore() const { return **mImageAvailableSemaphores[mSemaphoreIndex]; }
 

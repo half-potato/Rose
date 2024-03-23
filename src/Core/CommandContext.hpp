@@ -4,7 +4,6 @@
 #include "Image.hpp"
 #include "Pipeline.hpp"
 #include "ParameterMap.hpp"
-#include "TransientResourceCache.hpp"
 
 namespace RoseEngine {
 
@@ -63,21 +62,27 @@ using DescriptorSets = std::vector<vk::raii::DescriptorSet>;
 
 class CommandContext {
 private:
+	vk::raii::CommandPool mCommandPool = nullptr;
+	std::list<vk::raii::DescriptorPool> mCachedDescriptorPools;
+
 	vk::raii::CommandBuffer mCommandBuffer = nullptr;
-	vk::raii::CommandPool   mCommandPool = nullptr;
 	ref<Device> mDevice = {};
 	uint32_t mQueueFamily = {};
 
 	std::vector<vk::BufferMemoryBarrier2> mBufferBarrierQueue = {};
 	std::vector<vk::ImageMemoryBarrier2>  mImageBarrierQueue = {};
 
-	TransientResourceCache<vk::raii::CommandBuffer> mCachedCommandBuffers = {};
-	TransientResourceCache<ref<DescriptorSets>> mCachedDescriptorSets;
-	std::list<vk::raii::DescriptorPool> mCachedDescriptorPools;
+	uint64_t mLastSubmit = 0;
 
-	using CachedUploadBuffers = std::pair<BufferView, BufferView>;
-	std::unordered_map<vk::BufferUsageFlags, std::vector<CachedUploadBuffers>> mCachedUploadBuffers = {};
-	std::vector<CachedUploadBuffers> mNewCachedUploadBuffers = {};
+	struct CachedData {
+		std::unordered_map<vk::PipelineLayout, std::vector<ref<DescriptorSets>>> mDescriptorSets = {};
+		std::unordered_map<vk::PipelineLayout, std::vector<ref<DescriptorSets>>> mNewDescriptorSets = {};
+
+		using CachedUploadBuffers = std::pair<BufferView, BufferView>;
+		std::unordered_map<vk::BufferUsageFlags, std::vector<CachedUploadBuffers>> mUploadBuffers = {};
+		std::unordered_map<vk::BufferUsageFlags, std::vector<CachedUploadBuffers>> mNewUploadBuffers = {};
+	};
+	CachedData mCache = {};
 
 	void AllocateDescriptorPool();
 	DescriptorSets AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts);
@@ -99,46 +104,19 @@ public:
 	}
 
 	inline Device& GetDevice() const { return *mDevice; }
+	inline const ref<Device>& GetDeviceRef() const { return mDevice; }
 	inline uint32_t QueueFamily() const { return mQueueFamily; }
 
 	void Begin();
 
 	// Signals the device's timeline semaphore upon completion. Returns the signal value.
-	inline uint64_t Submit(
+	uint64_t Submit(
 		const uint32_t queueIndex = 0,
 		const vk::ArrayProxy<const vk::Semaphore>&          signalSemaphores = {},
 		const vk::ArrayProxy<const uint64_t>&               signalValues = {},
 		const vk::ArrayProxy<const vk::Semaphore>&          waitSemaphores = {},
 		const vk::ArrayProxy<const vk::PipelineStageFlags>& waitStages = {},
-		const vk::ArrayProxy<const uint64_t>&               waitValues = {}) {
-
-		mCommandBuffer.end();
-
-		vk::StructureChain<vk::SubmitInfo, vk::TimelineSemaphoreSubmitInfo> submitInfoChain = {};
-		auto& submitInfo = submitInfoChain.get<vk::SubmitInfo>();
-		auto& timelineSubmitInfo = submitInfoChain.get<vk::TimelineSemaphoreSubmitInfo>();
-
-		submitInfo.setCommandBuffers(*mCommandBuffer);
-
-		std::vector<vk::Semaphore> semaphores(signalSemaphores.size() + 1);
-		std::vector<uint64_t> values(signalValues.size() + 1);
-		std::ranges::copy(signalSemaphores, semaphores.begin());
-		std::ranges::copy(signalValues, values.begin());
-		semaphores.back() = *mDevice->TimelineSemaphore();
-		values.back() = mDevice->IncrementTimelineSignal();
-
-		submitInfo.setSignalSemaphores(semaphores);
-		timelineSubmitInfo.setSignalSemaphoreValues(values);
-
-		submitInfo.setWaitSemaphores(waitSemaphores);
-		submitInfo.setWaitDstStageMask(waitStages);
-		timelineSubmitInfo.setWaitSemaphoreValues(waitValues);
-
-		(*mDevice)->getQueue(mQueueFamily, queueIndex).submit( submitInfo );
-
-		mCachedCommandBuffers.push(std::move(mCommandBuffer), values[0]);
-		return values[0];
-	}
+		const vk::ArrayProxy<const uint64_t>&               waitValues = {});
 
 	void UpdateDescriptorSets(const DescriptorSets& descriptorSets, const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout);
 	ref<DescriptorSets> GetDescriptorSets(const PipelineLayout& pipelineLayout);
@@ -399,7 +377,7 @@ public:
 
 		BufferView hostBuffer = {};
 		BufferView buffer = {};
-		if (auto it_ = mCachedUploadBuffers.find(usage); it_ != mCachedUploadBuffers.end()) {
+		if (auto it_ = mCache.mUploadBuffers.find(usage); it_ != mCache.mUploadBuffers.end()) {
 			auto& q = it_->second;
 			if (!q.empty() && q.back().first.size() >= size) {
 				// find smallest cached buffer that can fit size
@@ -411,7 +389,7 @@ public:
 			}
 		}
 
-		if (hostBuffer) {
+		if (hostBuffer && hostBuffer.size() >= size) {
 			std::memcpy(hostBuffer.data(), data.data(), size);
 		} else {
 			hostBuffer = Buffer::Create(*mDevice, data);
@@ -421,13 +399,13 @@ public:
 				usage | vk::BufferUsageFlagBits::eTransferDst,
 				vk::MemoryPropertyFlagBits::eDeviceLocal,
 				VMA_ALLOCATION_CREATE_STRATEGY_MIN_TIME_BIT);
-			mDevice->SetDebugName(**hostBuffer.mBuffer, "Transient uniform buffer (host)");
-			mDevice->SetDebugName(**buffer.mBuffer, "Transient uniform buffer");
+			mDevice->SetDebugName(**hostBuffer.mBuffer, "Transient upload buffer");
+			mDevice->SetDebugName(**buffer.mBuffer, "Transient buffer (" + vk::to_string(usage) + ")");
 		}
 
 		Copy(hostBuffer, buffer);
 
-		return mNewCachedUploadBuffers.emplace_back(buffer, hostBuffer).first;
+		return mCache.mNewUploadBuffers[usage].emplace_back(buffer, hostBuffer).first;
 	}
 
 	#pragma endregion

@@ -10,24 +10,76 @@ void CommandContext::Begin() {
 			.queueFamilyIndex = mQueueFamily });
 	}
 
-	mCommandBuffer = mCachedCommandBuffers.pop_or_create(*mDevice, [&](){
+	if (!*mCommandBuffer) {
 		auto commandBuffers = (*mDevice)->allocateCommandBuffers(vk::CommandBufferAllocateInfo{
 			.commandPool = *mCommandPool,
 			.level = vk::CommandBufferLevel::ePrimary,
 			.commandBufferCount = 1 });
-		return std::move(commandBuffers[0]);
-	});
+		mCommandBuffer = std::move(commandBuffers[0]);
+	}
+
+	if (mLastSubmit > 0)
+		mDevice->Wait(mLastSubmit);
 
 	mCommandBuffer.reset();
 	mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
 
-	for (auto& b : mNewCachedUploadBuffers) {
-		if (b.first.mBuffer.use_count() == 1)
-			mCachedUploadBuffers[b.second.mBuffer->Usage()].emplace_back(std::move(b));
+	if (!mCache.mNewUploadBuffers.empty()) {
+		for (auto& [usage, bufs] : mCache.mNewUploadBuffers) {
+			for (auto& b : bufs)
+				if (b.first.mBuffer.use_count() == 1)
+					mCache.mUploadBuffers[usage].emplace_back(std::move(b));
+		}
+		mCache.mNewUploadBuffers.clear();
+		for (auto& [usage, bufs] : mCache.mUploadBuffers)
+			std::ranges::sort(bufs, [](const auto& lhs, const auto& rhs) { return lhs.first.size() < rhs.first.size(); });
 	}
-	mNewCachedUploadBuffers.clear();
-	for (auto& [usage, bufs] : mCachedUploadBuffers)
-		std::ranges::sort(bufs, [](const auto& lhs, const auto& rhs) { return lhs.first.size() < rhs.first.size(); });
+
+	if (!mCache.mNewDescriptorSets.empty()) {
+		for (auto&[layout, sets] : mCache.mNewDescriptorSets)
+			for (auto& s : sets)
+				mCache.mDescriptorSets[layout].emplace_back(std::move(s));
+		mCache.mNewDescriptorSets.clear();
+	}
+}
+
+uint64_t CommandContext::Submit(
+	const uint32_t queueIndex,
+	const vk::ArrayProxy<const vk::Semaphore>&          signalSemaphores,
+	const vk::ArrayProxy<const uint64_t>&               signalValues,
+	const vk::ArrayProxy<const vk::Semaphore>&          waitSemaphores,
+	const vk::ArrayProxy<const vk::PipelineStageFlags>& waitStages,
+	const vk::ArrayProxy<const uint64_t>&               waitValues) {
+
+	mCommandBuffer.end();
+
+	vk::StructureChain<vk::SubmitInfo, vk::TimelineSemaphoreSubmitInfo> submitInfoChain = {};
+	auto& submitInfo = submitInfoChain.get<vk::SubmitInfo>();
+	auto& timelineSubmitInfo = submitInfoChain.get<vk::TimelineSemaphoreSubmitInfo>();
+
+	submitInfo.setCommandBuffers(*mCommandBuffer);
+
+	uint64_t signalValue = mDevice->IncrementTimelineSignal();
+
+	std::vector<vk::Semaphore> semaphores(signalSemaphores.size() + 1);
+	std::vector<uint64_t> values(signalValues.size() + 1);
+	std::ranges::copy(signalSemaphores, semaphores.begin());
+	std::ranges::copy(signalValues, values.begin());
+	semaphores.back() = *mDevice->TimelineSemaphore();
+	values.back() = signalValue;
+
+	submitInfo.setSignalSemaphores(semaphores);
+	timelineSubmitInfo.setSignalSemaphoreValues(values);
+
+	submitInfo.setWaitSemaphores(waitSemaphores);
+	submitInfo.setWaitDstStageMask(waitStages);
+	timelineSubmitInfo.setWaitSemaphoreValues(waitValues);
+
+	(*mDevice)->getQueue(mQueueFamily, queueIndex).submit( submitInfo );
+
+	mLastSubmit = signalValue;
+
+	return signalValue;
 }
 
 void CommandContext::AllocateDescriptorPool() {
@@ -68,14 +120,22 @@ ref<DescriptorSets> CommandContext::GetDescriptorSets(const PipelineLayout& pipe
 	if (pipelineLayout.GetDescriptorSetLayouts().empty())
 		return nullptr;
 
-	auto descriptorSets = mCachedDescriptorSets.pop_or_create(*mDevice, [&]() {
+	ref<DescriptorSets> descriptorSets = nullptr;
+
+	auto it = mCache.mDescriptorSets.find(**pipelineLayout);
+	if (it != mCache.mDescriptorSets.end() && it->second.size() > 0) {
+		descriptorSets = it->second.back();
+		it->second.pop_back();
+	}
+
+	if (!descriptorSets) {
 		std::vector<vk::DescriptorSetLayout> setLayouts;
 		for (const auto& l : pipelineLayout.GetDescriptorSetLayouts())
 			setLayouts.emplace_back(**l);
-		return make_ref<DescriptorSets>(std::move(AllocateDescriptorSets(setLayouts)));
-	});
+		descriptorSets = make_ref<DescriptorSets>(std::move(AllocateDescriptorSets(setLayouts)));
+	}
 
-	mCachedDescriptorSets.push(descriptorSets, mDevice->NextTimelineSignal());
+	mCache.mNewDescriptorSets[**pipelineLayout].emplace_back(descriptorSets);
 
 	return descriptorSets;
 }
@@ -240,7 +300,6 @@ void CommandContext::UpdateDescriptorSets(const DescriptorSets& descriptorSets, 
 
 	if (!w.writes.empty())
 		(*mDevice)->updateDescriptorSets(w.writes, {});
-
 }
 
 void PushConstants(const CommandContext& context, const PipelineLayout& pipelineLayout, const ShaderParameter& parameter, const ShaderParameterBinding& binding, uint32_t constantOffset = 0) {

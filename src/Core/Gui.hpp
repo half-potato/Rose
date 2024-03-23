@@ -109,7 +109,7 @@ public:
 
 	/////////////////////////////
 
-	static void Initialize(const ref<Device>& device, const Window& window, const Swapchain& swapchain, const uint32_t queueFamily);
+	static void Initialize(CommandContext& context, const Window& window, const Swapchain& swapchain, const uint32_t queueFamily);
 	static void Destroy();
 
 	static void NewFrame();

@@ -1,7 +1,6 @@
-#include <iostream>
-
 #include <Core/Instance.hpp>
 #include <Core/CommandContext.hpp>
+#include <Core/TransientResourceCache.hpp>
 #include <Core/Window.hpp>
 #include <Core/Gui.hpp>
 
@@ -149,23 +148,27 @@ struct Renderer {
 		pipeline = Pipeline::CreateGraphics(device, vertexShader, fragmentShader, pipelineInfo);
 	}
 
-	inline void Update(CommandContext& context, double dt) {
-		float3 move = float3(0,0,0);
-		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_W)) move += float3(0,0,-1);
-		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_S)) move += float3(0,0, 1);
-		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_D)) move += float3( 1,0,0);
-		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_A)) move += float3(-1,0,0);
-		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_Q)) move += float3(0,-1,0);
-		if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_E)) move += float3(0, 1,0);
-		if (move != float3(0,0,0)) {
+	inline void Update(double dt) {
+		if (ImGui::IsWindowHovered()) {
+			if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+				cameraAngle += float2(-ImGui::GetIO().MouseDelta.y, ImGui::GetIO().MouseDelta.x) * float(M_PI) / 1920.f;
+				cameraAngle.x = clamp(cameraAngle.x, -float(M_PI/2), float(M_PI/2));
+			}
 			quat rx = glm::angleAxis( cameraAngle.x, float3(1,0,0));
 			quat ry = glm::angleAxis(-cameraAngle.y, float3(0,1,0));
-			cameraPos += (ry * rx) * normalize(move) * float(dt);
-		}
 
-		if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-			cameraAngle += float2(-ImGui::GetIO().MouseDelta.y, ImGui::GetIO().MouseDelta.x) * float(M_PI) / 1920.f;
-			cameraAngle.x = clamp(cameraAngle.x, -float(M_PI/2), float(M_PI/2));
+			if (ImGui::IsWindowFocused()) {
+				float3 move = float3(0,0,0);
+				if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_W)) move += float3(0,0,-1);
+				if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_S)) move += float3(0,0, 1);
+				if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_D)) move += float3( 1,0,0);
+				if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_A)) move += float3(-1,0,0);
+				if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_Q)) move += float3(0,-1,0);
+				if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_E)) move += float3(0, 1,0);
+				if (move != float3(0,0,0)) {
+					cameraPos += (ry * rx) * normalize(move) * float(dt);
+				}
+			}
 		}
 	}
 
@@ -173,10 +176,12 @@ struct Renderer {
 		quat rx = glm::angleAxis( cameraAngle.x, float3(1,0,0));
 		quat ry = glm::angleAxis(-cameraAngle.y, float3(0,1,0));
 		Transform cameraTransform = Transform{ .transform = transpose(float4x4(ry * rx)) } * Transform::Translate(cameraPos);
-
 		Transform view = inverse(cameraTransform);
 		Transform projection = Transform{ .transform = transpose( glm::infinitePerspective(glm::radians(fovY), (float)renderTarget.Extent().x / (float)renderTarget.Extent().y, nearZ) ) };
 		TransformGizmoGui(meshTransform, view, projection);
+
+		if (ImGui::IsKeyPressed(ImGuiKey_F5, false))
+			CreatePipeline(context.GetDevice(), renderTarget.GetImage()->Info().format);
 
 		ShaderParameter params = {};
 		params["objectToWorld"] = meshTransform;
@@ -246,23 +251,30 @@ inline void InspectorGui(Renderer& renderer) {
 
 class App {
 public:
-	ref<Instance>       instance  = nullptr;
-	ref<Device>         device    = nullptr;
-	ref<Window>         window    = nullptr;
-	ref<Swapchain>      swapchain = nullptr;
-	ref<CommandContext> context   = nullptr;
+	ref<Instance>  instance  = nullptr;
+	ref<Device>    device    = nullptr;
+	ref<Window>    window    = nullptr;
+	ref<Swapchain> swapchain = nullptr;
+	std::vector<ref<CommandContext>> contexts = {};
 
 	vk::raii::Semaphore commandSignalSemaphore = nullptr;
 
 	uint32_t presentQueueFamily = 0;
 
-	std::unordered_map<std::string, bool> widgetStates;
+	std::unordered_map<std::string, std::pair<bool, std::function<void()>>> widgets = {};
+
+	TransientResourceCache<ImageView> cachedRenderTargets = {};
+	uint2 cachedRenderTargetExtent = uint2(0,0);
 
 	double dt = 0;
 	double fps = 0;
 	std::chrono::high_resolution_clock::time_point lastFrame = {};
 
 	Renderer renderer = {};
+
+	inline void AddWidget(const std::string& name, auto fn, const bool initialState = false) {
+		widgets[name] = std::make_pair(initialState, fn);
+	}
 
 	inline App(std::span<const char*, std::dynamic_extent> args) {
 		std::vector<std::string> instanceExtensions;
@@ -277,10 +289,153 @@ public:
 
 		window    = Window::Create(*instance, "Rose", uint2(1920, 1080));
 		swapchain = Swapchain::Create(*device, *window->GetSurface());
-		context   = CommandContext::Create(device, presentQueueFamily);
-		renderer = Renderer::Create(*context);
+
+		contexts.emplace_back(CommandContext::Create(device, presentQueueFamily));
+		renderer = Renderer::Create(*contexts[0]);
 
 		commandSignalSemaphore = vk::raii::Semaphore(**device, vk::SemaphoreCreateInfo{});
+
+		AddWidget("Memory", [=]() {
+			const bool memoryBudgetExt = device->EnabledExtensions().contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+			vk::StructureChain<vk::PhysicalDeviceMemoryProperties2, vk::PhysicalDeviceMemoryBudgetPropertiesEXT> structureChain;
+			if (memoryBudgetExt) {
+				const auto tmp = device->PhysicalDevice().getMemoryProperties2<vk::PhysicalDeviceMemoryProperties2, vk::PhysicalDeviceMemoryBudgetPropertiesEXT>();
+				structureChain = tmp;
+			} else {
+				structureChain.get<vk::PhysicalDeviceMemoryProperties2>() = device->PhysicalDevice().getMemoryProperties2();
+			}
+
+			const vk::PhysicalDeviceMemoryProperties2& properties = structureChain.get<vk::PhysicalDeviceMemoryProperties2>();
+			const vk::PhysicalDeviceMemoryBudgetPropertiesEXT& budgetProperties = structureChain.get<vk::PhysicalDeviceMemoryBudgetPropertiesEXT>();
+
+			VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+			vmaGetHeapBudgets(device->MemoryAllocator(), budgets);
+
+			for (uint32_t heapIndex = 0; heapIndex < properties.memoryProperties.memoryHeapCount; heapIndex++) {
+				const char* isDeviceLocalStr = (properties.memoryProperties.memoryHeaps[heapIndex].flags & vk::MemoryHeapFlagBits::eDeviceLocal) ? " (device local)" : "";
+
+				if (memoryBudgetExt) {
+					const auto[usage, usageUnit]   = FormatBytes(budgetProperties.heapUsage[heapIndex]);
+					const auto[budget, budgetUnit] = FormatBytes(budgetProperties.heapBudget[heapIndex]);
+					ImGui::Text("Heap %u%s (%llu %s / %llu %s)", heapIndex, isDeviceLocalStr, usage, usageUnit, budget, budgetUnit);
+				} else
+					ImGui::Text("Heap %u%s", heapIndex, isDeviceLocalStr);
+				ImGui::Indent();
+
+				// VMA stats
+				{
+					const auto[usage, usageUnit]   = FormatBytes(budgets[heapIndex].usage);
+					const auto[budget, budgetUnit] = FormatBytes(budgets[heapIndex].budget);
+					ImGui::Text("%llu %s used, %llu %s budgeted", usage, usageUnit, budget, budgetUnit);
+
+					const auto[allocationBytes, allocationBytesUnit] = FormatBytes(budgets[heapIndex].statistics.allocationBytes);
+					ImGui::Text("%u allocations\t(%llu %s)", budgets[heapIndex].statistics.allocationCount, allocationBytes, allocationBytesUnit);
+
+					const auto[blockBytes, blockBytesUnit] = FormatBytes(budgets[heapIndex].statistics.blockBytes);
+					ImGui::Text("%u memory blocks\t(%llu %s)", budgets[heapIndex].statistics.blockCount, blockBytes, blockBytesUnit);
+				}
+
+				ImGui::Unindent();
+			}
+		});
+
+		AddWidget("Window", [=]() {
+			{
+				uint2 e = window->GetExtent();
+				bool changed = false;
+				ImGui::InputScalar("Width", ImGuiDataType_U32, &e.x);
+				changed |= ImGui::IsItemDeactivatedAfterEdit();
+				ImGui::InputScalar("Height", ImGuiDataType_U32, &e.y);
+				changed |= ImGui::IsItemDeactivatedAfterEdit();
+				if (changed) window->Resize(e);
+			}
+
+			vk::SurfaceCapabilitiesKHR capabilities = device->PhysicalDevice().getSurfaceCapabilitiesKHR(*window->GetSurface());
+			ImGui::SetNextItemWidth(40);
+			uint32_t imageCount = swapchain->GetMinImageCount();
+			if (ImGui::DragScalar("Min image count", ImGuiDataType_U32, &imageCount, 1, &capabilities.minImageCount, &capabilities.maxImageCount))
+				swapchain->SetMinImageCount(imageCount);
+			ImGui::LabelText("Min image count", "%u", imageCount);
+			ImGui::LabelText("Image count", "%u", swapchain->ImageCount());
+
+			if (ImGui::BeginCombo("Present mode", to_string(swapchain->GetPresentMode()).c_str())) {
+				for (auto mode : device->PhysicalDevice().getSurfacePresentModesKHR(*window->GetSurface()))
+					if (ImGui::Selectable(vk::to_string(mode).c_str(), swapchain->GetPresentMode() == mode)) {
+						swapchain->SetPresentMode(mode);
+					}
+				ImGui::EndCombo();
+			}
+
+			if (ImGui::CollapsingHeader("Usage flags")) {
+				uint32_t usage = uint32_t(swapchain->GetImageUsage());
+				for (uint32_t i = 0; i < 8; i++)
+					if (ImGui::CheckboxFlags(to_string((vk::ImageUsageFlagBits)(1 << i)).c_str(), &usage, 1 << i))
+						swapchain->SetImageUsage(vk::ImageUsageFlags(usage));
+			}
+
+			auto fmt_to_str = [](vk::SurfaceFormatKHR f) { return vk::to_string(f.format) + ", " + vk::to_string(f.colorSpace); };
+			if (ImGui::BeginCombo("Surface format", fmt_to_str(swapchain->GetFormat()).c_str())) {
+				for (auto format : device->PhysicalDevice().getSurfaceFormatsKHR(*window->GetSurface())) {
+					vk::ImageFormatProperties p;
+					vk::Result e = (*device->PhysicalDevice()).getImageFormatProperties(format.format, vk::ImageType::e2D, vk::ImageTiling::eOptimal, swapchain->GetImageUsage(), {}, &p);
+					if (e == vk::Result::eSuccess) {
+						if (ImGui::Selectable(fmt_to_str(format).c_str(), swapchain->GetFormat() == format)) {
+							swapchain->SetFormat(format);
+						}
+					}
+				}
+				ImGui::EndCombo();
+			}
+		});
+
+		AddWidget("Profiler", [&](){
+			ImGui::Text("%.1f fps (%.1f ms)", fps, 1000 / fps);
+		});
+
+		AddWidget("Renderer", [&]() {
+			InspectorGui(renderer);
+		}, true);
+
+		AddWidget("Viewport", [&]() {
+			const float2 extent = std::bit_cast<float2>(ImGui::GetWindowContentRegionMax()) - std::bit_cast<float2>(ImGui::GetWindowContentRegionMin());
+
+			renderer.Update(dt);
+
+			if (extent.x > 0 && extent.y > 0) {
+				if (cachedRenderTargetExtent != uint2(extent)) {
+					device->Wait();
+					cachedRenderTargets.clear();
+					cachedRenderTargetExtent = uint2(extent);
+				}
+				ImageView renderTarget = cachedRenderTargets.pop_or_create(*device, [&]() {
+					return ImageView::Create(
+							Image::Create(*device, ImageInfo{
+								.format = swapchain->GetFormat().format,
+								.extent = uint3(uint2(extent), 1),
+								.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment,
+								.queueFamilies = { presentQueueFamily } }),
+							vk::ImageSubresourceRange{
+								.aspectMask = vk::ImageAspectFlagBits::eColor,
+								.baseMipLevel = 0,
+								.levelCount = 1,
+								.baseArrayLayer = 0,
+								.layerCount = 1 });
+				});
+
+				ImGui::Image(Gui::GetTextureID(renderTarget, vk::Filter::eNearest), std::bit_cast<ImVec2>(extent));
+
+				float2 viewportMin = std::bit_cast<float2>(ImGui::GetItemRectMin());
+				float2 viewportMax = std::bit_cast<float2>(ImGui::GetItemRectMax());
+				ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y);
+				ImGuizmo::SetID(0);
+
+				const auto& context = contexts[swapchain->ImageIndex()];
+				context->ClearColor(renderTarget, vk::ClearColorValue{ std::array<float,4>{ .5f, .6f, .7f, 1.f } });
+				renderer.Render(*context, renderTarget);
+
+				cachedRenderTargets.push(renderTarget, device->NextTimelineSignal());
+			}
+		}, true);
 	}
 	inline ~App() {
 		device->Wait();
@@ -292,18 +447,24 @@ public:
 		if (!swapchain->Recreate(*device, *window->GetSurface(), { presentQueueFamily }))
 			return false; // Window unavailable (minimized?)
 
-		Gui::Initialize(device, *window, *swapchain, presentQueueFamily);
+		contexts.resize(swapchain->ImageCount());
+		for (auto& c : contexts)
+			if (!c)
+				c = CommandContext::Create(device, presentQueueFamily);
 
+		Gui::Initialize(*contexts[0], *window, *swapchain, presentQueueFamily);
+
+		cachedRenderTargets.clear();
 		renderer.CreatePipeline(*device, swapchain->GetFormat().format);
 
 		return true;
 	}
 
-	inline void DrawGui() {
+	inline void Update() {
 		// Menu bar
 		ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
 		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize), ImGuiCond_Always;
-		ImGui::Begin("Main Dockspace", nullptr, ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoBringToFrontOnFocus|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_MenuBar|ImGuiWindowFlags_NoBackground);
+		ImGui::Begin("Main Dockspace", nullptr, ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoBringToFrontOnFocus|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_MenuBar);
 
 		if (ImGui::BeginMenuBar()) {
 			if (ImGui::BeginMenu("File")) {
@@ -313,9 +474,9 @@ public:
 				ImGui::EndMenu();
 			}
 			if (ImGui::BeginMenu("View")) {
-				for (auto&[name, flag] : widgetStates) {
+				for (auto&[name, widget] : widgets) {
 					if (ImGui::MenuItem(name.c_str())) {
-						flag = !flag;
+						widget.first = !widget.first;
 					}
 				}
 				ImGui::EndMenu();
@@ -337,137 +498,15 @@ public:
 
 		ImGui::End();
 
-		if (bool& open = widgetStates["Memory usage"]) {
-			if (ImGui::Begin("Memory usage", &open)) {
-				const bool memoryBudgetExt = device->EnabledExtensions().contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
-				vk::StructureChain<vk::PhysicalDeviceMemoryProperties2, vk::PhysicalDeviceMemoryBudgetPropertiesEXT> structureChain;
-				if (memoryBudgetExt) {
-					const auto tmp = device->PhysicalDevice().getMemoryProperties2<vk::PhysicalDeviceMemoryProperties2, vk::PhysicalDeviceMemoryBudgetPropertiesEXT>();
-					structureChain = tmp;
-				} else {
-					structureChain.get<vk::PhysicalDeviceMemoryProperties2>() = device->PhysicalDevice().getMemoryProperties2();
-				}
+		// Widget windows
 
-				const vk::PhysicalDeviceMemoryProperties2& properties = structureChain.get<vk::PhysicalDeviceMemoryProperties2>();
-				const vk::PhysicalDeviceMemoryBudgetPropertiesEXT& budgetProperties = structureChain.get<vk::PhysicalDeviceMemoryBudgetPropertiesEXT>();
-
-				VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
-				vmaGetHeapBudgets(device->MemoryAllocator(), budgets);
-
-				for (uint32_t heapIndex = 0; heapIndex < properties.memoryProperties.memoryHeapCount; heapIndex++) {
-					const char* isDeviceLocalStr = (properties.memoryProperties.memoryHeaps[heapIndex].flags & vk::MemoryHeapFlagBits::eDeviceLocal) ? " (device local)" : "";
-
-					if (memoryBudgetExt) {
-						const auto[usage, usageUnit]   = FormatBytes(budgetProperties.heapUsage[heapIndex]);
-						const auto[budget, budgetUnit] = FormatBytes(budgetProperties.heapBudget[heapIndex]);
-						ImGui::Text("Heap %u%s (%llu %s / %llu %s)", heapIndex, isDeviceLocalStr, usage, usageUnit, budget, budgetUnit);
-					} else
-						ImGui::Text("Heap %u%s", heapIndex, isDeviceLocalStr);
-					ImGui::Indent();
-
-					// VMA stats
-					{
-						const auto[usage, usageUnit]   = FormatBytes(budgets[heapIndex].usage);
-						const auto[budget, budgetUnit] = FormatBytes(budgets[heapIndex].budget);
-						ImGui::Text("%llu %s used, %llu %s budgeted", usage, usageUnit, budget, budgetUnit);
-
-						const auto[allocationBytes, allocationBytesUnit] = FormatBytes(budgets[heapIndex].statistics.allocationBytes);
-						ImGui::Text("%u allocations\t(%llu %s)", budgets[heapIndex].statistics.allocationCount, allocationBytes, allocationBytesUnit);
-
-						const auto[blockBytes, blockBytesUnit] = FormatBytes(budgets[heapIndex].statistics.blockBytes);
-						ImGui::Text("%u memory blocks\t(%llu %s)", budgets[heapIndex].statistics.blockCount, blockBytes, blockBytesUnit);
-					}
-
-					ImGui::Unindent();
-				}
+		for (auto&[name, widget] : widgets) {
+			if (widget.first) {
+				if (ImGui::Begin(name.c_str(), &widget.first))
+					widget.second();
+				ImGui::End();
 			}
-			ImGui::End();
 		}
-
-		if (bool& open = widgetStates["Window"]) {
-			if (ImGui::Begin("Window", &open)) {
-				{
-					uint2 e = window->GetExtent();
-					bool changed = false;
-					ImGui::InputScalar("Width", ImGuiDataType_U32, &e.x);
-					changed |= ImGui::IsItemDeactivatedAfterEdit();
-					ImGui::InputScalar("Height", ImGuiDataType_U32, &e.y);
-					changed |= ImGui::IsItemDeactivatedAfterEdit();
-					if (changed) window->Resize(e);
-				}
-
-				vk::SurfaceCapabilitiesKHR capabilities = device->PhysicalDevice().getSurfaceCapabilitiesKHR(*window->GetSurface());
-				ImGui::SetNextItemWidth(40);
-				uint32_t imageCount = swapchain->GetMinImageCount();
-				if (ImGui::DragScalar("Min image count", ImGuiDataType_U32, &imageCount, 1, &capabilities.minImageCount, &capabilities.maxImageCount))
-					swapchain->SetMinImageCount(imageCount);
-				ImGui::LabelText("Min image count", "%u", imageCount);
-				ImGui::LabelText("Image count", "%u", swapchain->ImageCount());
-
-				if (ImGui::BeginCombo("Present mode", to_string(swapchain->GetPresentMode()).c_str())) {
-					for (auto mode : device->PhysicalDevice().getSurfacePresentModesKHR(*window->GetSurface()))
-						if (ImGui::Selectable(vk::to_string(mode).c_str(), swapchain->GetPresentMode() == mode)) {
-							swapchain->SetPresentMode(mode);
-						}
-					ImGui::EndCombo();
-				}
-
-				if (ImGui::CollapsingHeader("Usage flags")) {
-					uint32_t usage = uint32_t(swapchain->GetImageUsage());
-					for (uint32_t i = 0; i < 8; i++)
-						if (ImGui::CheckboxFlags(to_string((vk::ImageUsageFlagBits)(1 << i)).c_str(), &usage, 1 << i))
-							swapchain->SetImageUsage(vk::ImageUsageFlags(usage));
-				}
-
-				auto fmt_to_str = [](vk::SurfaceFormatKHR f) { return vk::to_string(f.format) + ", " + vk::to_string(f.colorSpace); };
-				if (ImGui::BeginCombo("Surface format", fmt_to_str(swapchain->GetFormat()).c_str())) {
-					for (auto format : device->PhysicalDevice().getSurfaceFormatsKHR(*window->GetSurface())) {
-						vk::ImageFormatProperties p;
-						vk::Result e = (*device->PhysicalDevice()).getImageFormatProperties(format.format, vk::ImageType::e2D, vk::ImageTiling::eOptimal, swapchain->GetImageUsage(), {}, &p);
-						if (e == vk::Result::eSuccess) {
-							if (ImGui::Selectable(fmt_to_str(format).c_str(), swapchain->GetFormat() == format)) {
-								swapchain->SetFormat(format);
-							}
-						}
-					}
-					ImGui::EndCombo();
-				}
-			}
-			ImGui::End();
-		}
-
-		if (bool& open = widgetStates["Profiler"]) {
-			if (ImGui::Begin("Profiler", &open)) {
-				ImGui::Text("%.1f fps (%.1f ms)", fps, 1000 / fps);
-			}
-			ImGui::End();
-		}
-
-		if (bool& open = widgetStates["Demo window"]) {
-			ImGui::ShowDemoWindow(&open);
-		}
-
-		if (bool& open = widgetStates["Renderer"]) {
-			if (ImGui::Begin("Renderer", &open)) {
-				InspectorGui(renderer);
-			}
-			ImGui::End();
-		}
-	}
-
-	inline void Update() {
-		if (ImGui::IsKeyPressed(ImGuiKey_F5, false))
-			renderer.CreatePipeline(*device, swapchain->GetFormat().format);
-		renderer.Update(*context, dt);
-	}
-
-	inline void Render(const ImageView& renderTarget) {
-		context->ClearColor(renderTarget, vk::ClearColorValue{std::array<float,4>{ .5f, .7f, 1.f, 1.f }});
-
-		ImGuizmo::SetRect(0, 0, renderTarget.Extent().x, renderTarget.Extent().y);
-		ImGuizmo::SetID(0);
-
-		renderer.Render(*context, renderTarget);
 	}
 
 	inline void DoFrame() {
@@ -475,16 +514,17 @@ public:
 		const auto now = std::chrono::high_resolution_clock::now();
 		dt = std::chrono::duration_cast<std::chrono::duration<double>>(now - lastFrame).count();
 		lastFrame = now;
+		// moving average over the last second
 		fps = lerp(fps, 1.0 / dt, std::min(1.0, dt));
 
 		Gui::NewFrame();
 
-		context->Begin();
+		const auto& context = contexts[swapchain->ImageIndex()];
 
-		DrawGui();
+		context->Begin();
+		context->ClearColor(swapchain->CurrentImage(), vk::ClearColorValue{std::array<float,4>{ .5f, .7f, 1.f, 1.f }});
 
 		Update();
-		Render(swapchain->CurrentImage());
 
 		Gui::Render(*context, swapchain->CurrentImage());
 

@@ -163,7 +163,9 @@ void StyleColorsSpectrum() {
 	colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.20f, 0.20f, 0.20f, 0.35f);
 }
 
-void Gui::Initialize(const ref<Device>& device, const Window& window, const Swapchain& swapchain, const uint32_t queueFamily) {
+void Gui::Initialize(CommandContext& context, const Window& window, const Swapchain& swapchain, const uint32_t queueFamily) {
+	const auto& device = context.GetDeviceRef();
+
 	if (*mRenderPass)
 		Destroy();
 	mQueueFamily = queueFamily;
@@ -247,10 +249,9 @@ void Gui::Initialize(const ref<Device>& device, const Window& window, const Swap
 	ImGui::GetIO().Fonts->AddFontFromFileTTF("DroidSans.ttf", 16.f);
 	mHeaderFont = ImGui::GetIO().Fonts->AddFontFromFileTTF("DroidSans.ttf", 20.f);
 
-	ref<CommandContext> context = CommandContext::Create(device, mQueueFamily);
-	context->Begin();
-	ImGui_ImplVulkan_CreateFontsTexture(***context);
-	device->Wait( context->Submit(0) );
+	context.Begin();
+	ImGui_ImplVulkan_CreateFontsTexture(**context);
+	device->Wait( context.Submit() );
 
 	ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
@@ -261,9 +262,9 @@ void Gui::Destroy() {
 		ImGui::DestroyContext();
 		mRenderPass.clear();
 		mFramebuffers.clear();
-		mImGuiDescriptorPool.reset();
 		mFrameTextures.clear();
 		mTextureIDs.clear();
+		mImGuiDescriptorPool.reset();
 	}
 }
 

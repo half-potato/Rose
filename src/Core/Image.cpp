@@ -1,5 +1,6 @@
 #include "Image.hpp"
 #include "Buffer.hpp"
+#include <iostream>
 
 namespace RoseEngine {
 
@@ -42,8 +43,10 @@ ref<Image> Image::Create(Device& device, const ImageInfo& info, const vk::Memory
 	VkImage vkimg;
 	VmaAllocation alloc;
 	vk::Result result = (vk::Result)vmaCreateImage(device.MemoryAllocator(), &(const VkImageCreateInfo&)createInfo, &allocationCreateInfo, &vkimg, &alloc, nullptr);
-	if (result != vk::Result::eSuccess)
+	if (result != vk::Result::eSuccess) {
+		std::cerr << "Failed to create image: " << vk::to_string(result) << std::endl;
 		return nullptr;
+	}
 
 	auto image = make_ref<Image>();
 	image->mImage = vkimg;

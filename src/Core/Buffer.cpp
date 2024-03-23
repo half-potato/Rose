@@ -8,8 +8,10 @@ ref<Buffer> Buffer::Create(const Device& device, const vk::BufferCreateInfo& cre
 	VmaAllocationInfo allocInfo;
 	VkBuffer vkbuffer;
 	vk::Result result = (vk::Result)vmaCreateBuffer(device.MemoryAllocator(), &(const VkBufferCreateInfo&)createInfo, &allocationInfo, &vkbuffer, &alloc, &allocInfo);
-	if (result != vk::Result::eSuccess)
+	if (result != vk::Result::eSuccess) {
+		std::cerr << "Failed to create buffer: " << vk::to_string(result) << std::endl;
 		return nullptr;
+	}
 
 	auto buffer = make_ref<Buffer>();
 	buffer->mBuffer = vkbuffer;

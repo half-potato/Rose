@@ -56,9 +56,10 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBi
 			stream << "\t" << specstr << std::endl;
 	};
 
-	if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
+	if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
 		print_fn(std::cerr << BOLDRED);
-	else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
+		throw std::runtime_error(pCallbackData->pMessage);
+	} else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 		print_fn(std::cerr << BOLDYELLOW);
 	else
 		print_fn(std::cout << BOLDCYAN);
