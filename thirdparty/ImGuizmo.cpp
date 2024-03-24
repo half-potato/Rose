@@ -896,6 +896,14 @@ namespace ImGuizmo
       gContext.mDisplayRatio = width / height;
    }
 
+   void GetRect(float* dst)
+   {
+      dst[0] = gContext.mX;
+      dst[1] = gContext.mY;
+      dst[2] = gContext.mWidth;
+      dst[3] = gContext.mHeight;
+   }
+
    void SetOrthographic(bool isOrthographic)
    {
       gContext.mIsOrthographic = isOrthographic;

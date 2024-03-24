@@ -111,7 +111,7 @@ struct BufferRange {
 	inline bool empty() const { return !mBuffer || mSize == 0; }
 	inline size_type size() const { return mSize; }
 	inline size_type size_bytes() const { return mSize == VK_WHOLE_SIZE ? VK_WHOLE_SIZE : mSize * sizeof(T); }
-	inline T* data() const { return reinterpret_cast<T*>(reinterpret_cast<std::byte*>(mBuffer->data()) + mOffset); }
+	inline T* data() const { return mBuffer ? reinterpret_cast<T*>(reinterpret_cast<std::byte*>(mBuffer->data()) + mOffset) : nullptr; }
 
 	inline reference at(size_type index) const { return data()[index]; }
 	inline reference operator[](size_type index) const { return at(index); }

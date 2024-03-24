@@ -40,6 +40,19 @@ struct Transform {
 			0,0,0,1 );
 		return t;
 	}
+
+	#ifdef __cplusplus
+	inline static Transform Rotate(const quat v) {
+		Transform t = {};
+		t.transform = transpose(float4x4(v));
+		return t;
+	}
+	inline static Transform Perspective(const float fovY, const float aspect, const float nearZ) {
+		Transform t = {};
+		t.transform = transpose( glm::infinitePerspectiveRH(fovY, aspect, nearZ) );
+		return t;
+	}
+	#endif
 };
 
 inline Transform operator*(const Transform lhs, const Transform rhs) {

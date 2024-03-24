@@ -27,7 +27,7 @@ void CommandContext::Begin() {
 	if (!mCache.mNewUploadBuffers.empty()) {
 		for (auto& [usage, bufs] : mCache.mNewUploadBuffers) {
 			for (auto& b : bufs)
-				if (b.first.mBuffer.use_count() == 1)
+				if (b.second.mBuffer && b.second.mBuffer.use_count() == 1)
 					mCache.mUploadBuffers[usage].emplace_back(std::move(b));
 		}
 		mCache.mNewUploadBuffers.clear();
@@ -306,21 +306,14 @@ void PushConstants(const CommandContext& context, const PipelineLayout& pipeline
 	for (const auto&[name, param] : parameter) {
 		uint32_t arrayIndex = 0;
 
-		bool isArrayElement = std::ranges::all_of(name, [](char c){ return std::isdigit(c); });
-		if (isArrayElement) {
-			arrayIndex = std::stoi(name);
-			if (const auto* desc = binding.get_if<ShaderDescriptorBinding>()) {
-				if (arrayIndex >= desc->arraySize) {
-					std::cout << "Warning array index " << arrayIndex << " which is out of bounds for array size " << desc->arraySize << std::endl;
-				}
-			}
-		}
-		const auto& paramBinding = isArrayElement ? binding : binding.at(name);
+		const auto& paramBinding = binding.at(name);
 
 		uint32_t offset = constantOffset;
 
 		if (const auto* v = param.get_if<ConstantParameter>()) {
 			if (const auto* constantBinding = paramBinding.get_if<ShaderConstantBinding>()) {
+				if (!constantBinding->pushConstant)
+					continue;
 				if (v->size() > constantBinding->typeSize)
 					std::cout << "Warning: Binding constant parameter of size " << v->size() << " to binding of size " << constantBinding->typeSize << std::endl;
 
@@ -329,8 +322,6 @@ void PushConstants(const CommandContext& context, const PipelineLayout& pipeline
 				if (constantBinding->pushConstant)
 					context->pushConstants<std::byte>(**pipelineLayout, pipelineLayout.StageMask(), offset, *v);
 			}
-		} else {
-			std::cout << "Warning: Attempting to bind descriptor parameter to push constant" << std::endl;
 		}
 
 		PushConstants(context, pipelineLayout, param, paramBinding, offset);
@@ -353,8 +344,6 @@ void CommandContext::BindParameters(const ShaderParameter& rootParameter, const 
 			vkDescriptorSets.emplace_back(*ds);
 		mCommandBuffer.bindDescriptorSets(pipelineLayout.StageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
 	}
-
-	PushConstants(rootParameter, pipelineLayout);
 }
 
 }
