@@ -354,7 +354,7 @@ public:
 
 		Copy(hostBuffer, dst);
 
-		mCache.mNewUploadBuffers[usage].emplace_back(hostBuffer, buffer).first;
+		mCache.mNewUploadBuffers[usage].emplace_back(hostBuffer, buffer);
 	}
 
 	inline void Blit(const ref<Image>& src, const ref<Image>& dst, const vk::ArrayProxy<const vk::ImageBlit>& regions, const vk::Filter filter) {
