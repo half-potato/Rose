@@ -22,15 +22,8 @@ struct ShaderDescriptorBinding {
 	uint32_t           inputAttachmentIndex = {};
 	bool               writable = false;
 
-	inline bool operator==(const ShaderDescriptorBinding& rhs) const {
-		return descriptorType == descriptorType
-			&& setIndex == setIndex
-			&& bindingIndex == bindingIndex
-			&& arraySize == arraySize
-			&& inputAttachmentIndex == inputAttachmentIndex
-			&& writable == writable;
-	}
-	inline bool operator!=(const ShaderDescriptorBinding& rhs) const { return !operator==(rhs); }
+	bool operator==(const ShaderDescriptorBinding& rhs) const = default;
+	bool operator!=(const ShaderDescriptorBinding& rhs) const = default;
 };
 struct ShaderConstantBinding {
 	uint32_t offset = 0; // relative to parent
@@ -39,18 +32,23 @@ struct ShaderConstantBinding {
 	uint32_t bindingIndex = 0;
 	bool     pushConstant = false;
 
-	inline bool operator==(const ShaderConstantBinding& rhs) const {
-		return offset == offset && typeSize == typeSize && setIndex == rhs.setIndex && bindingIndex == rhs.bindingIndex && pushConstant == pushConstant;
-	}
-	inline bool operator!=(const ShaderConstantBinding& rhs) const { return !operator==(rhs); }
+	bool operator==(const ShaderConstantBinding& rhs) const = default;
+	bool operator!=(const ShaderConstantBinding& rhs) const = default;
 };
 struct ShaderVertexAttributeBinding {
 	uint32_t location = 0;
 	std::string semantic = {};
 	uint32_t semanticIndex = {};
+
+	bool operator==(const ShaderVertexAttributeBinding& rhs) const = default;
+	bool operator!=(const ShaderVertexAttributeBinding& rhs) const = default;
 };
 
-using ShaderParameterBinding = ParameterMap<std::monostate, ShaderDescriptorBinding, ShaderConstantBinding, ShaderVertexAttributeBinding>;
+using ShaderParameterBinding = ParameterMap<
+	std::monostate, 
+	ShaderDescriptorBinding, 
+	ShaderConstantBinding, 
+	ShaderVertexAttributeBinding >;
 using ShaderDefines = NameMap<std::string>;
 
 class ShaderModule {

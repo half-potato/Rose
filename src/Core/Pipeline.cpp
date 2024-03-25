@@ -30,7 +30,7 @@ struct PipelineBindings {
 
 			if (const auto* binding = subBinding.get_if<ShaderConstantBinding>()) {
 				if (hasBinding) {
-					const ShaderParameterBinding& bp = (*it).second;
+					const ShaderParameterBinding& bp = it->second;
 					const auto* b = bp.get_if<ShaderConstantBinding>();
 					if (!b || *b != *binding) {
 						throw std::logic_error("Binding appears multiple times, but is not the same");
@@ -65,7 +65,7 @@ struct PipelineBindings {
 				}
 			} else if (const auto* binding = subBinding.get_if<ShaderDescriptorBinding>()) {
 				if (hasBinding) {
-					const ShaderParameterBinding& bp = (*it).second;
+					const ShaderParameterBinding& bp = it->second;
 					const auto* b = bp.get_if<ShaderDescriptorBinding>();
 					if (!b || *b != *binding) {
 						throw std::logic_error("Binding appears multiple times, but is not the same");
