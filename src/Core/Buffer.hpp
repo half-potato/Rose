@@ -122,6 +122,13 @@ struct BufferRange {
 	inline iterator begin() const { return data(); }
 	inline iterator end() const { return data() + mSize; }
 
+	inline BufferRange slice(size_t start, size_t count = VK_WHOLE_SIZE) const {
+		return BufferRange{
+			.mBuffer = mBuffer,
+			.mOffset = mOffset + sizeof(T) * start,
+			.mSize = count == VK_WHOLE_SIZE ? size() - start : count };
+	}
+
 	template<typename Ty> inline BufferRange<Ty> cast() const { return BufferRange<Ty>{ mBuffer, mOffset, size_bytes() / sizeof(Ty) }; }
 	template<typename Ty> inline operator BufferRange<Ty>() const { return cast<Ty>(); }
 

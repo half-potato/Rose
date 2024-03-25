@@ -113,7 +113,7 @@ struct PipelineBindings {
 	};
 };
 
-inline void PrintBinding(const ShaderParameterBinding& binding, uint32_t depth = 0) {
+void PrintBinding(const ShaderParameterBinding& binding, uint32_t depth) {
 	std::cout << " ";
 	if (const auto* c = binding.get_if<ShaderConstantBinding>()) {
 		std::cout << " " << c->setIndex << "." << c->bindingIndex << " ";
@@ -143,7 +143,9 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::Array
 		layout->mStageMask |= shader->Stage();
 	}
 
-	//PrintBinding(layout->mRootBinding);
+	#ifdef LOG_SHADER_REFLECTION
+	PrintBinding(layout->mRootBinding);
+	#endif
 
 	// create DescriptorSetLayouts
 

@@ -50,7 +50,6 @@ using BufferParameter = BufferView;
 struct ImageParameter {
 	ImageView              image;
 	vk::ImageLayout        imageLayout;
-	vk::AccessFlags        imageAccess;
 	ref<vk::raii::Sampler> sampler;
 };
 using AccelerationStructureParameter = ref<vk::raii::AccelerationStructureKHR>;
@@ -126,8 +125,9 @@ public:
 
 	void UpdateDescriptorSets(const DescriptorSets& descriptorSets, const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout);
 	ref<DescriptorSets> GetDescriptorSets(const PipelineLayout& pipelineLayout);
-	void PushConstants(const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout) const;
-	void BindParameters(const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout, ref<DescriptorSets> descriptorSets = nullptr);
+	void BindDescriptors(const PipelineLayout& pipelineLayout, const DescriptorSets& descriptorSets) const;
+	void PushConstants  (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) const;
+	void BindParameters (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter);
 
 	#pragma region Barriers
 
@@ -158,8 +158,8 @@ public:
 		const auto& oldState = buffer.GetState();
 		if (oldState.access == vk::AccessFlagBits2::eNone || newState.access == vk::AccessFlagBits2::eNone)
 			return;
-		if (!(oldState.access & gWriteAccesses) && !(newState.access & gWriteAccesses))
-			return;
+		//if (!(oldState.access & gWriteAccesses) && !(newState.access & gWriteAccesses))
+		//	return;
 		AddBarrier(buffer.SetState(newState));
 	}
 	inline void AddBarrier(const ref<Image>& img, const vk::ImageSubresourceRange& subresource, const Image::ResourceState& newState) {
@@ -473,15 +473,27 @@ public:
 
 	void Dispatch(Pipeline& pipeline, const uint3 threadCount, const ShaderParameter& rootParameter) {
 		mCommandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline);
-		BindParameters(rootParameter, *pipeline.Layout());
+		BindParameters(*pipeline.Layout(), rootParameter);
 		ExecuteBarriers();
-		PushConstants(rootParameter, *pipeline.Layout());
+
 		auto dim = GetDispatchDim(pipeline.GetShader(vk::ShaderStageFlagBits::eCompute)->WorkgroupSize(), threadCount);
 		mCommandBuffer.dispatch(dim.x, dim.y, dim.z);
 	}
-
 	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1)   , rootParameter); }
 	void Dispatch(Pipeline& pipeline, const uint32_t threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1, 1), rootParameter); }
+
+	void DispatchIndirect(Pipeline& pipeline, const BufferView dim, const ShaderParameter& rootParameter) {
+		AddBarrier(dim, Buffer::ResourceState{
+			.stage  = vk::PipelineStageFlagBits2::eComputeShader,
+			.access = vk::AccessFlagBits2::eIndirectCommandRead,
+			.queueFamily = mQueueFamily });
+
+		mCommandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline);
+		BindParameters(*pipeline.Layout(), rootParameter);
+		ExecuteBarriers();
+
+		mCommandBuffer.dispatchIndirect(**dim.mBuffer, dim.mOffset);
+	}
 
 	#pragma endregion
 };

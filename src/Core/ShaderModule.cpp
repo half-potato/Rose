@@ -78,6 +78,7 @@ inline const char* to_string(slang::ParameterCategory category) {
 struct ReflectParameterContext {
 	uint32_t bindingSpaceOffset = 0;
 	uint32_t bindingIndexOffset = 0;
+	uint32_t constantOffset = 0;
 	uint32_t depth = 1;
 	bool     pushConstant = false;
 	bool     varying = false;
@@ -90,7 +91,7 @@ void ReflectParameter(ShaderParameterBinding& parent, slang::VariableLayoutRefle
 	slang::ParameterCategory     category      = typeLayout->getParameterCategory();
 	slang::TypeReflection::Kind  kind          = typeLayout->getKind();
 
-	#if 0
+	#ifdef LOG_SHADER_REFLECTION
 	std::cout << std::string(ctx.depth, '\t') << parameterName;
 	if (parameter.getSemanticName()) {
 		if (ctx.varying) std::cout << " location = " << parameter.getBindingIndex();
@@ -145,7 +146,7 @@ void ReflectParameter(ShaderParameterBinding& parent, slang::VariableLayoutRefle
 				param = std::monostate{};
 		} else
 			param = ShaderConstantBinding{
-				.offset   = (uint32_t)parameter.getOffset(),
+				.offset   = (uint32_t)parameter.getOffset() + ctx.constantOffset,
 				.typeSize = (uint32_t)typeLayout->getSize(),
 				.setIndex     = ctx.bindingSpaceOffset,
 				.bindingIndex = ctx.bindingIndexOffset,
@@ -181,6 +182,21 @@ void ReflectParameter(ShaderParameterBinding& parent, slang::VariableLayoutRefle
 	}
 }
 
+void ApplyGlobalOffsets(const ShaderParameterBinding& binding, ReflectParameterContext& ctx) {
+	if (auto* descriptorBinding = binding.get_if<ShaderDescriptorBinding>()) {
+		if (descriptorBinding->setIndex == ctx.bindingSpaceOffset) {
+			ctx.bindingIndexOffset = std::max(ctx.bindingIndexOffset, 1 + descriptorBinding->bindingIndex);
+		}
+	}
+	if (auto* constantBinding = binding.get_if<ShaderConstantBinding>()) {
+		if (constantBinding->pushConstant) {
+			ctx.constantOffset = std::max(ctx.constantOffset, constantBinding->offset + constantBinding->typeSize);
+		}
+	}
+	for (auto[name, b] : binding)
+		ApplyGlobalOffsets(b, ctx);
+}
+
 ref<ShaderModule> ShaderModule::Create(
 	const Device& device,
 	const std::filesystem::path& sourceFile,
@@ -206,6 +222,9 @@ ref<ShaderModule> ShaderModule::Create(
 		for (const std::string& arg : compileArgs) args.emplace_back(arg.c_str());
 		if (SLANG_FAILED(request->processCommandLineArguments(args.data(), args.size())))
 			std::cerr << "Warning: Failed to process compile arguments while compiling " << sourceFile.stem() << "/" << entryPoint << std::endl;
+
+		std::string thirdparty = (std::filesystem::path(std::source_location::current().file_name()).parent_path().parent_path().parent_path() / "thirdparty").string();
+		request->addSearchPath(thirdparty.c_str());
 
 		// process defines
 
@@ -313,7 +332,10 @@ ref<ShaderModule> ShaderModule::Create(
 
 		auto entryPointReflection = shaderReflection->getEntryPointByIndex(0);
 		if (entryPointReflection->getParameterCount() > 0) {
-			//std::cout << entryPoint << ":" << std::endl;
+			ApplyGlobalOffsets(shader->mRootBinding, ctx);
+			#ifdef LOG_SHADER_REFLECTION
+			std::cout << entryPoint << ":" << std::endl;
+			#endif
 			for (uint32_t parameter_index = 0; parameter_index < entryPointReflection->getParameterCount(); parameter_index++) {
 				slang::VariableLayoutReflection* parameter = entryPointReflection->getParameterByIndex(parameter_index);
 				if (parameter->getCategory() == slang::ParameterCategory::VaryingOutput || parameter->getCategory() == slang::ParameterCategory::None)

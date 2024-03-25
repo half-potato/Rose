@@ -149,10 +149,13 @@ struct DescriptorSetWriter {
 	std::vector<DescriptorInfo> descriptorInfos;
 	std::vector<vk::WriteDescriptorSet> writes;
 
+
 	PairMap<std::vector<std::byte>, uint32_t, uint32_t> uniforms;
 	std::vector<std::pair<uint32_t, std::span<const std::byte, std::dynamic_extent>>> pushConstants;
 
 	std::vector<vk::DescriptorSet> descriptorSets;
+
+	vk::PipelineStageFlags2 stage = vk::PipelineStageFlagBits2::eComputeShader;
 
 	vk::WriteDescriptorSet WriteDescriptor(const ShaderDescriptorBinding& binding, uint32_t arrayIndex) {
 		return vk::WriteDescriptorSet{
@@ -194,6 +197,10 @@ struct DescriptorSetWriter {
 					}
 				}
 			}
+			if (!isArrayElement && binding.find(name) == binding.end()) {
+				std::cout << "Error: No parameter " << name << " exists in pipeline." << std::endl;
+				//PrintBinding(binding);
+			}
 			const auto& paramBinding = isArrayElement ? binding : binding.at(name);
 
 			uint32_t offset = constantOffset;
@@ -233,13 +240,22 @@ struct DescriptorSetWriter {
 					if (const auto* v = param.get_if<BufferParameter>()) {
 						const auto& buffer = *v;
 						if (buffer.empty()) continue;
+						context.AddBarrier(*v, Buffer::ResourceState{
+							.stage  = stage,
+							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead,
+							.queueFamily = context.QueueFamily() });
 						WriteBuffer(*descriptorBinding, arrayIndex, vk::DescriptorBufferInfo{
 							.buffer = **buffer.mBuffer,
 							.offset = buffer.mOffset,
 							.range  = buffer.size() });
 					} else if (const auto* v = param.get_if<ImageParameter>()) {
-						const auto& [image, layout, accessFlags, sampler] = *v;
+						const auto& [image, layout, sampler] = *v;
 						if (!image && !sampler) continue;
+						context.AddBarrier(image, Image::ResourceState{
+							.layout = layout,
+							.stage  = stage,
+							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead,
+							.queueFamily = context.QueueFamily() });
 						WriteImage(*descriptorBinding, arrayIndex, vk::DescriptorImageInfo{
 							.sampler     = sampler ? **sampler : nullptr,
 							.imageView   = image   ? *image    : nullptr,
@@ -305,8 +321,16 @@ void CommandContext::UpdateDescriptorSets(const DescriptorSets& descriptorSets, 
 void PushConstants(const CommandContext& context, const PipelineLayout& pipelineLayout, const ShaderParameter& parameter, const ShaderParameterBinding& binding, uint32_t constantOffset = 0) {
 	for (const auto&[name, param] : parameter) {
 		uint32_t arrayIndex = 0;
-
-		const auto& paramBinding = binding.at(name);
+		bool isArrayElement = std::ranges::all_of(name, [](char c){ return std::isdigit(c); });
+		if (isArrayElement) {
+			arrayIndex = std::stoi(name);
+			if (const auto* desc = binding.get_if<ShaderDescriptorBinding>()) {
+				if (arrayIndex >= desc->arraySize) {
+					std::cout << "Warning array index " << arrayIndex << " which is out of bounds for array size " << desc->arraySize << std::endl;
+				}
+			}
+		}
+		const auto& paramBinding = isArrayElement ? binding : binding.at(name);
 
 		uint32_t offset = constantOffset;
 
@@ -324,26 +348,32 @@ void PushConstants(const CommandContext& context, const PipelineLayout& pipeline
 			}
 		}
 
-		PushConstants(context, pipelineLayout, param, paramBinding, offset);
+		if (!isArrayElement)
+			PushConstants(context, pipelineLayout, param, paramBinding, offset);
 	}
 }
 
-void CommandContext::PushConstants(const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout) const {
+void CommandContext::PushConstants(const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) const {
 	RoseEngine::PushConstants(*this, pipelineLayout, rootParameter, pipelineLayout.RootBinding());
 }
 
-void CommandContext::BindParameters(const ShaderParameter& rootParameter, const PipelineLayout& pipelineLayout, ref<DescriptorSets> descriptorSets) {
-	if (!descriptorSets) {
-		descriptorSets = GetDescriptorSets(pipelineLayout);
-		UpdateDescriptorSets(*descriptorSets, rootParameter, pipelineLayout);
-	}
+void CommandContext::BindDescriptors(const PipelineLayout& pipelineLayout, const DescriptorSets& descriptorSets) const {
+	std::vector<vk::DescriptorSet> vkDescriptorSets;
+	for (const auto& ds : descriptorSets)
+		vkDescriptorSets.emplace_back(*ds);
+	mCommandBuffer.bindDescriptorSets(pipelineLayout.StageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
+}
 
-	if (descriptorSets) {
-		std::vector<vk::DescriptorSet> vkDescriptorSets;
-		for (const auto& ds : *descriptorSets)
-			vkDescriptorSets.emplace_back(*ds);
-		mCommandBuffer.bindDescriptorSets(pipelineLayout.StageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
-	}
+void CommandContext::BindParameters(const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) {
+	auto descriptorSets = GetDescriptorSets(pipelineLayout);
+	UpdateDescriptorSets(*descriptorSets, rootParameter, pipelineLayout);
+
+	std::vector<vk::DescriptorSet> vkDescriptorSets;
+	for (const auto& ds : *descriptorSets)
+		vkDescriptorSets.emplace_back(*ds);
+	mCommandBuffer.bindDescriptorSets(pipelineLayout.StageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
+
+	PushConstants(pipelineLayout, rootParameter);
 }
 
 }

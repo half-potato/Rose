@@ -3,7 +3,7 @@
 
 #include <iostream>
 
-int main(int argc, char** argv) {
+int main(int argc, const char** argv) {
 	std::span args = { argv, (size_t)argc };
 
 	using namespace RoseEngine;
@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
 	float scale2  =  3.0f;
 	float offset2 = -0.5f;
 
-	auto test = Pipeline::CreateCompute(*device, ShaderModule::Create(*device, FindShaderPath("Test.slang")));
+	auto test = Pipeline::CreateCompute(*device, ShaderModule::Create(*device, FindShaderPath("Test.cs.slang")));
 
 	auto dataGpu = Buffer::Create(*device, dataCpu.size_bytes());
 	ShaderParameter params;

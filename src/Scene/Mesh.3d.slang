@@ -1,19 +1,17 @@
-#include "Scene/Transform.h"
+import GBuffer;
+import Transform;
+
 using namespace RoseEngine;
+
+StructuredBuffer<Transform> objectTransforms;
 
 uniform Transform worldToCamera;
 uniform Transform projection;
-
-StructuredBuffer<Transform> objectTransforms;
 
 struct v2f {
     float4 pos: SV_POSITION;
     float3 color: COLOR0;
 	uint instanceId: TEXCOORD0;
-};
-struct GBuffer {
-    float4 color: SV_Target0;
-    uint4 visibility : SV_Target1;
 };
 
 [shader("vertex")]

@@ -100,6 +100,8 @@ public:
 	}
 };
 
+void PrintBinding(const ShaderParameterBinding& binding, uint32_t depth = 0);
+
 inline uint3 GetDispatchDim(const uint3 workgroupSize, const uint3 extent) {
 	return (extent + workgroupSize - uint3(1)) / workgroupSize;
 }
