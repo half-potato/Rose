@@ -223,8 +223,10 @@ ref<ShaderModule> ShaderModule::Create(
 		if (SLANG_FAILED(request->processCommandLineArguments(args.data(), args.size())))
 			std::cerr << "Warning: Failed to process compile arguments while compiling " << sourceFile.stem() << "/" << entryPoint << std::endl;
 
-		std::string thirdparty = (std::filesystem::path(std::source_location::current().file_name()).parent_path().parent_path().parent_path() / "thirdparty").string();
-		request->addSearchPath(thirdparty.c_str());
+		std::string srcDir = std::filesystem::path(std::source_location::current().file_name()).parent_path().parent_path().string();
+		std::string thirdpartyDir = (std::filesystem::path(std::source_location::current().file_name()).parent_path().parent_path().parent_path() / "thirdparty").string();
+		request->addSearchPath(srcDir.c_str());
+		request->addSearchPath(thirdpartyDir.c_str());
 
 		// process defines
 
@@ -260,6 +262,7 @@ ref<ShaderModule> ShaderModule::Create(
 	} while (true);
 
 	auto shader = make_ref<ShaderModule>();
+	shader->mEntryPointName = entryPoint;
 	shader->mCompileTime = std::chrono::file_clock::now();
 
 	// get spirv binary

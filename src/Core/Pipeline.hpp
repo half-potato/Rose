@@ -95,10 +95,7 @@ public:
 
 	inline const ref<const PipelineLayout>& Layout() const { return mLayout; }
 	inline const ref<const ShaderModule>& GetShader(const vk::ShaderStageFlagBits stage) const {
-		for (const auto& shader : mShaders)
-			if (shader->Stage() == stage)
-				return shader;
-		return nullptr;
+		return *std::ranges::find(mShaders, stage, &ShaderModule::Stage);
 	}
 };
 

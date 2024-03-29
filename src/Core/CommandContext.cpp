@@ -289,7 +289,7 @@ void CommandContext::UpdateDescriptorSets(const DescriptorSets& descriptorSets, 
 	if (pipelineLayout.GetDescriptorSetLayouts().empty())
 		return;
 
-	DescriptorSetWriter w;
+	DescriptorSetWriter w = {};
 	for (const auto& s : descriptorSets)
 		w.descriptorSets.emplace_back(*s);
 	w.descriptorInfos.reserve(GetDescriptorCount(pipelineLayout.RootBinding()));

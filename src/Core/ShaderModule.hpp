@@ -45,9 +45,9 @@ struct ShaderVertexAttributeBinding {
 };
 
 using ShaderParameterBinding = ParameterMap<
-	std::monostate, 
-	ShaderDescriptorBinding, 
-	ShaderConstantBinding, 
+	std::monostate,
+	ShaderDescriptorBinding,
+	ShaderConstantBinding,
 	ShaderVertexAttributeBinding >;
 using ShaderDefines = NameMap<std::string>;
 
@@ -55,6 +55,8 @@ class ShaderModule {
 private:
 	vk::raii::ShaderModule mModule = nullptr;
 	size_t mSpirvHash = 0;
+
+	std::string mEntryPointName = {};
 
 	std::chrono::file_clock::time_point mCompileTime = {};
 	std::vector<std::filesystem::path>  mSourceFiles = {};
@@ -86,6 +88,8 @@ public:
 	inline uint3                         WorkgroupSize() const { return mWorkgroupSize; }
 	inline const ShaderParameterBinding& RootBinding() const { return mRootBinding; }
 	inline const auto&                   EntryPointArguments() const { return mEntryPointArguments; }
+	inline const std::string&            EntryPointName() const { return mEntryPointName; }
+	inline const auto&                   SourceFiles() const { return mSourceFiles; }
 
 	inline bool IsStale() const {
 		for (const auto& dep : mSourceFiles)

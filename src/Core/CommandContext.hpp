@@ -10,9 +10,16 @@ namespace RoseEngine {
 // represents a uniform or push constant
 class ConstantParameter : public std::vector<std::byte> {
 public:
-	template<typename T>
+	template<typename T> requires(std::is_trivially_copyable_v<T>)
 	inline ConstantParameter(const T& value) {
-		operator=(value);
+		resize(sizeof(value));
+		*reinterpret_cast<T*>(data()) = value;
+	}
+
+	template<std::ranges::contiguous_range R> requires(!std::is_trivially_copyable_v<R>)
+	inline ConstantParameter(const R& value) {
+		resize(value.size() * sizeof(std::ranges::range_value_t<R>));
+		std::memcpy( data(), value.data(), size() );
 	}
 
 	ConstantParameter() = default;
@@ -33,17 +40,17 @@ public:
 		return *reinterpret_cast<const T*>(data());
 	}
 
-	template<std::ranges::contiguous_range R>
-	inline ConstantParameter& operator=(const R& value) {
-		resize(value.size() * sizeof(std::ranges::range_value_t<R>));
-		std::memcpy( data(), value.data(), size() );
-		return *this;
-	}
-
 	template<typename T> requires(std::is_trivially_copyable_v<T>)
 	inline T& operator=(const T& value) {
 		resize(sizeof(value));
 		return *reinterpret_cast<T*>(data()) = value;
+	}
+
+	template<std::ranges::contiguous_range R> requires(!std::is_trivially_copyable_v<R>)
+	inline ConstantParameter& operator=(const R& value) {
+		resize(value.size() * sizeof(std::ranges::range_value_t<R>));
+		std::memcpy( data(), value.data(), size() );
+		return *this;
 	}
 };
 using BufferParameter = BufferView;
@@ -141,10 +148,13 @@ public:
 			vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
 
 	inline void ExecuteBarriers() {
-		vk::DependencyInfo info { .dependencyFlags = vk::DependencyFlagBits::eByRegion };
-		info.setBufferMemoryBarriers(mBufferBarrierQueue);
-		info.setImageMemoryBarriers(mImageBarrierQueue);
-		mCommandBuffer.pipelineBarrier2(info);
+		mCommandBuffer.pipelineBarrier2(vk::DependencyInfo {
+			.dependencyFlags = vk::DependencyFlagBits::eByRegion,
+			.bufferMemoryBarrierCount = (uint32_t)mBufferBarrierQueue.size(),
+			.pBufferMemoryBarriers    = mBufferBarrierQueue.data(),
+			.imageMemoryBarrierCount  = (uint32_t)mImageBarrierQueue.size(),
+			.pImageMemoryBarriers     = mImageBarrierQueue.data(),
+		});
 
 		mBufferBarrierQueue.clear();
 		mImageBarrierQueue.clear();
@@ -156,11 +166,18 @@ public:
 	template<typename T>
 	inline void AddBarrier(const BufferRange<T>& buffer, const Buffer::ResourceState& newState) {
 		const auto& oldState = buffer.GetState();
+		auto b = buffer.SetState(newState);
 		if (oldState.access == vk::AccessFlagBits2::eNone || newState.access == vk::AccessFlagBits2::eNone)
 			return;
 		//if (!(oldState.access & gWriteAccesses) && !(newState.access & gWriteAccesses))
-		//	return;
-		AddBarrier(buffer.SetState(newState));
+		//	return; // remove read-read buffer barriers
+
+		if (b.dstQueueFamilyIndex == VK_QUEUE_FAMILY_IGNORED && b.srcQueueFamilyIndex != VK_QUEUE_FAMILY_IGNORED)
+			b.dstQueueFamilyIndex = b.srcQueueFamilyIndex;
+		else if (b.srcQueueFamilyIndex == VK_QUEUE_FAMILY_IGNORED && b.dstQueueFamilyIndex != VK_QUEUE_FAMILY_IGNORED)
+			b.srcQueueFamilyIndex = b.dstQueueFamilyIndex;
+
+		AddBarrier(b);
 	}
 	inline void AddBarrier(const ref<Image>& img, const vk::ImageSubresourceRange& subresource, const Image::ResourceState& newState) {
 		auto barriers = img->SetSubresourceState(subresource, newState);
@@ -481,19 +498,6 @@ public:
 	}
 	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1)   , rootParameter); }
 	void Dispatch(Pipeline& pipeline, const uint32_t threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1, 1), rootParameter); }
-
-	void DispatchIndirect(Pipeline& pipeline, const BufferView dim, const ShaderParameter& rootParameter) {
-		AddBarrier(dim, Buffer::ResourceState{
-			.stage  = vk::PipelineStageFlagBits2::eComputeShader,
-			.access = vk::AccessFlagBits2::eIndirectCommandRead,
-			.queueFamily = mQueueFamily });
-
-		mCommandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline);
-		BindParameters(*pipeline.Layout(), rootParameter);
-		ExecuteBarriers();
-
-		mCommandBuffer.dispatchIndirect(**dim.mBuffer, dim.mOffset);
-	}
 
 	#pragma endregion
 };

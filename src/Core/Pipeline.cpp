@@ -205,6 +205,7 @@ ref<Pipeline> Pipeline::CreateCompute(const Device& device, const ref<const Shad
 			.module = ***shader,
 			.pName = "main" },
 		.layout = ***layout });
+	device.SetDebugName(***pipeline, shader->SourceFiles()[0].stem().string() + ":" + shader->EntryPointName());
 	return pipeline;
 }
 
@@ -278,6 +279,7 @@ ref<Pipeline> Pipeline::CreateGraphics(const Device& device, const ref<const Sha
 		.subpass             = info.subpassIndex };
 	createInfo.setStages(stages);
 	pipeline->mPipeline = device->createGraphicsPipeline(device.PipelineCache(), createInfo);
+	device.SetDebugName(***pipeline, vertexShader->SourceFiles()[0].stem().string() + ":" + vertexShader->EntryPointName() + " | " + fragmentShader->SourceFiles()[0].stem().string() + fragmentShader->EntryPointName());
 
 	return pipeline;
 }

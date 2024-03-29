@@ -78,7 +78,7 @@ public:
 		return it->second;
 	}
 	inline vk::BufferMemoryBarrier2 SetState(const ResourceState& newState, vk::DeviceSize offset, vk::DeviceSize size) {
-		const auto& oldState = GetState(offset, size);
+		auto oldState = GetState(offset, size);
 		mState[std::make_pair(offset, size)] = newState;
 		return vk::BufferMemoryBarrier2 {
 			.srcStageMask        = oldState.stage,

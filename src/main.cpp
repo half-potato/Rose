@@ -1,6 +1,6 @@
 #include <Core/WindowedApp.hpp>
-#include <Scene/ObjectRenderer.hpp>
-#include <Scene/TerrainRenderer.hpp>
+#include <Render/MeshRenderer/MeshRenderer.hpp>
+#include <Render/Terrain/TerrainRenderer.hpp>
 
 #include <ImGuizmo.h>
 
@@ -15,7 +15,7 @@ int main(int argc, const char** argv) {
 	});
 
 	app.AddWidget("Renderer", [&]() {
-		widget.InspectorGui();
+		widget.InspectorGui(*app.contexts[app.swapchain->ImageIndex()]);
 	}, true);
 
 	app.AddWidget("Viewport", [&]() {

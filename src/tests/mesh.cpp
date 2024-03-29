@@ -4,7 +4,7 @@
 #include <Core/Window.hpp>
 #include <Core/CommandContext.hpp>
 
-#include <Scene/Mesh.hpp>
+#include <Render/MeshRenderer/Mesh.hpp>
 
 using namespace RoseEngine;
 

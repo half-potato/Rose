@@ -43,10 +43,10 @@ link_libraries(glm)
 
 
 file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
-file(GLOB_RECURSE SCENE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Scene/**.cpp")
+file(GLOB_RECURSE RENDER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Render/**.cpp")
 add_library(RoseLib
 	${CORE_SRCS}
-	${SCENE_SRCS}
+	${RENDER_SRCS}
 	thirdparty/miniz.c
 	thirdparty/pugixml.cpp
 	thirdparty/imgui/imgui_demo.cpp
