@@ -21,13 +21,20 @@ public:
 		return { {  NodeOutputConnection::gDefaultOutputName, value } };
 	}
 
-	inline void Gui() override {
+	inline void Gui(float width = 0) override {
 		ImNodes::BeginNodeTitleBar();
 		ImGui::TextUnformatted("Expression");
 		ImNodes::EndNodeTitleBar();
-		ImGui::SetNextItemWidth(75);
-		ImGui::InputText("Expression", &value);
-		ProceduralNode::Gui();
+		ImGui::SetNextItemWidth(150);
+
+		{
+			auto& name = outputs[0];
+			ImNodes::BeginOutputAttribute((int)HashArgs(this, name, 1));
+
+			ImGui::InputText("Value", &value);
+
+			ImNodes::EndOutputAttribute();
+		}
 	}
 };
 
@@ -205,21 +212,50 @@ public:
 		return *vars;
 	}
 
-	inline void Gui() override {
+	inline void Gui(float width = 0) override {
 		ImNodes::BeginNodeTitleBar();
 		ImGui::TextUnformatted("Math Op");
 		ImNodes::EndNodeTitleBar();
-		ImGui::SetNextItemWidth(100);
+		ImGui::SetNextItemWidth(150);
+		float w;
 		if (ImGui::BeginCombo("Op", GetOpName(op))) {
+			w = ImGui::GetItemRectSize().x;
 			for (uint32_t i = 0; i < MathOp::eOpCount; i++) {
-				ImGui::SetNextItemWidth(50);
 				if (ImGui::Selectable(GetOpName((MathOp)i), op == (MathOp)i)) {
 					op = (MathOp)i;
 				}
 			}
 			ImGui::EndCombo();
+		} else
+			w = ImGui::GetItemRectSize().x;
+
+		auto it = inputs.begin();
+		uint32_t argCount = GetArgCount(op);
+		for (uint32_t i = 0; i < std::max(outputs.size(), inputs.size()); i++) {
+			float offset = w;
+			bool inputRow = it != inputs.end() && i < argCount;
+			if (inputRow) {
+				auto&[name, c] = *it;
+				ImNodes::BeginInputAttribute((int)HashArgs(this, name));
+				ImGui::TextUnformatted(name.c_str());
+				offset -= ImGui::GetItemRectSize().x;
+				ImNodes::EndInputAttribute();
+				it++;
+			}
+
+			if (i < outputs.size()) {
+				auto& name = outputs[i];
+				if (inputRow)
+					ImGui::SameLine();
+				ImVec2 s = ImGui::CalcTextSize(name.c_str());
+				offset -= s.x;
+				ImGui::Dummy(ImVec2(offset, s.y));
+				ImNodes::BeginOutputAttribute((int)HashArgs(this, name, 1));
+				ImGui::SameLine();
+				ImGui::TextUnformatted(name.c_str());
+				ImNodes::EndOutputAttribute();
+			}
 		}
-		ProceduralNode::Gui();
 	}
 };
 

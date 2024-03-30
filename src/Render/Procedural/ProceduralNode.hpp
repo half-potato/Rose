@@ -11,7 +11,8 @@
 
 namespace RoseEngine {
 
-using NodeOutputMap = std::unordered_map<std::string/*node output name*/, std::string/*compiled variable name*/>;
+// node output id -> compiled variable name
+using NodeOutputMap = NameMap<std::string>;
 
 class ProceduralNode;
 
@@ -55,7 +56,7 @@ struct NodeOutputConnection {
 class ProceduralNode {
 protected:
 	friend struct ProceduralNodeCompiler;
-	std::unordered_map<std::string, NodeOutputConnection> inputs = {};
+	NameMap<NodeOutputConnection> inputs = {};
 	std::vector<std::string> outputs = { NodeOutputConnection::gDefaultOutputName };
 
 public:
@@ -89,7 +90,7 @@ public:
 
 	// Gui function for the whole node. Calls Gui() and recurses on inputs
 	virtual void NodeGui();
-	virtual void Gui();
+	virtual void Gui(float width = 0);
 
 	virtual NodeOutputMap compile(ProceduralNodeCompiler& compiler) const = 0;
 };

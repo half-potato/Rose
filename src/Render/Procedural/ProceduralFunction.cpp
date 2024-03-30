@@ -1,29 +1,30 @@
-#include "ProceduralNodeTree.hpp"
+#include "ProceduralFunction.hpp"
 #include <imnodes.h>
 
 namespace RoseEngine {
 
-ProceduralNodeTree::ProceduralNodeTree(const std::string& outputName, const std::string& outputType, const NodeOutputConnection& input) {
-	mOutputNode = make_ref<ProceduralOutputNode>(std::unordered_map<std::string, std::string>{
-		{ outputName, outputType }
-	});
-	mOutputNode->SetInput(outputName, input);
+ProceduralFunction::ProceduralFunction(const NameMap<std::string>& outputTypes, const NameMap<NodeOutputConnection>& inputs) {
+	mOutputNode = make_ref<OutputVariable>(outputTypes);
+	for (const auto& [outputName, input] : inputs)
+		mOutputNode->SetInput(outputName, input);
 }
 
-void ProceduralNodeTree::NodeGui() {
+void ProceduralFunction::NodeGui() {
 	ImNodes::BeginNodeEditor();
 	mOutputNode->NodeGui();
 	ImNodes::EndNodeEditor();
 }
 
-void ProceduralNode::Gui() {
+void ProceduralNode::Gui(float w) {
 	auto it = inputs.begin();
 	for (uint32_t i = 0; i < std::max(outputs.size(), inputs.size()); i++) {
+		float offset = w;
 		bool inputRow = it != inputs.end();
 		if (inputRow) {
 			auto&[name, c] = *it;
 			ImNodes::BeginInputAttribute((int)HashArgs(this, name));
 			ImGui::TextUnformatted(name.c_str());
+			offset -= ImGui::GetItemRectSize().x;
 			ImNodes::EndInputAttribute();
 			it++;
 		}
@@ -32,6 +33,12 @@ void ProceduralNode::Gui() {
 			auto& name = outputs[i];
 			if (inputRow)
 				ImGui::SameLine();
+			if (offset > 0) {
+				ImVec2 s = ImGui::CalcTextSize(name.c_str());
+				offset -= s.x;
+				ImGui::Dummy(ImVec2(offset, s.y));
+				ImGui::SameLine();
+			}
 			ImNodes::BeginOutputAttribute((int)HashArgs(this, name, 1));
 			ImGui::TextUnformatted(name.c_str());
 			ImNodes::EndOutputAttribute();
@@ -53,7 +60,7 @@ void ProceduralNode::NodeGui() {
 	}
 }
 
-std::string ProceduralNodeTree::compile(const std::string& lineEnding) {
+std::string ProceduralFunction::compile(const std::string& lineEnding) {
 	ProceduralNodeCompiler compiler = {};
 	compiler.lineEnding = lineEnding;
 

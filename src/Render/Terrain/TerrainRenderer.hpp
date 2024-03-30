@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Render/ViewportWidget.hpp>
-#include <Render/Procedural/ProceduralNodeTree.hpp>
+#include <Render/Procedural/ProceduralFunction.hpp>
 #include "ConcurrentBinaryTree.hpp"
 
 namespace RoseEngine {
@@ -17,8 +17,9 @@ private:
 	bool wire = false;
 	bool split = true;
 
-	ref<ProceduralNodeTree> nodeTree = {};
+	ref<ProceduralFunction> heightFunction = {};
 	size_t nodeTreeHash = 0;
+	std::string compiledHeightFunction = {};
 
 	ref<ConcurrentBinaryTree> cbt = {};
 

@@ -8,24 +8,29 @@ namespace RoseEngine {
 void TerrainRenderer::Initialize(CommandContext& context) {
 	cbt = ConcurrentBinaryTree::Create(context, 20, 6);
 
-	NodeOutputConnection posInput{ make_ref<ProceduralInputNode>("position", "float3"), "position" };
+	NodeOutputConnection posInput{ make_ref<ProceduralFunction::InputVariable>("position", "float3"), "position" };
 
-	nodeTree = make_ref<ProceduralNodeTree>("height", "float",
-		make_ref<MathNode>(MathNode::MathOp::eAdd,
-			make_ref<MathNode>(MathNode::MathOp::eLength, posInput),
-			make_ref<ExpressionNode>("1")));
+	heightFunction = make_ref<ProceduralFunction>(
+		// outputs
+		NameMap<std::string>{ { "height", "float" } },
+		// inputs
+		NameMap<NodeOutputConnection>{ { "height",
+			make_ref<MathNode>(MathNode::MathOp::eAdd,
+				make_ref<MathNode>(MathNode::MathOp::eLength, posInput),
+				make_ref<ExpressionNode>("1")) }
+	});
 }
 
 void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 	auto srcFile = FindShaderPath("Terrain.3d.slang");
 
-	size_t nodeHash = nodeTree->Root().hash();
-
-	std::string nodeSrc = nodeTree->compile("");
+	size_t nodeHash = heightFunction->Root().hash();
+	if (nodeHash != nodeTreeHash)
+		compiledHeightFunction = heightFunction->compile("");
 
 	ShaderDefines defs {
 		{ "CBT_HEAP_BUFFER_COUNT", std::to_string(cbt->ArraySize()) },
-		{ "PROCEDURAL_NODE_SRC", nodeSrc },
+		{ "PROCEDURAL_NODE_SRC", compiledHeightFunction }
 	};
 
 	if (!subdividePipeline || subdividePipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->IsStale() || nodeHash != nodeTreeHash)
@@ -38,7 +43,7 @@ void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 	}
 	if (!vertexShader || vertexShader->IsStale() || nodeHash != nodeTreeHash)
 		vertexShader   = ShaderModule::Create(device, srcFile, "vertexMain", "sm_6_7", defs);
-	if (!fragmentShader || fragmentShader->IsStale()|| nodeHash != nodeTreeHash)
+	if (!fragmentShader || fragmentShader->IsStale() || nodeHash != nodeTreeHash)
 		fragmentShader = ShaderModule::Create(device, srcFile, "fragmentMain", "sm_6_7", defs);
 
 	GraphicsPipelineInfo pipelineInfo {
@@ -179,7 +184,7 @@ void TerrainRenderer::Render(CommandContext& context) {
 }
 
 void TerrainRenderer::NodeGui() {
-	nodeTree->NodeGui();
+	heightFunction->NodeGui();
 }
 
 }
