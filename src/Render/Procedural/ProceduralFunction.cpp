@@ -3,7 +3,8 @@
 
 namespace RoseEngine {
 
-ProceduralFunction::ProceduralFunction(const NameMap<std::string>& outputTypes, const NameMap<NodeOutputConnection>& inputs) {
+ProceduralFunction::ProceduralFunction(const std::string& entryPoint, const NameMap<std::string>& outputTypes, const NameMap<NodeOutputConnection>& inputs) {
+	mEntryPoint = entryPoint,
 	mOutputNode = make_ref<OutputVariable>(outputTypes);
 	for (const auto& [outputName, input] : inputs)
 		mOutputNode->SetInput(outputName, input);
@@ -60,32 +61,51 @@ void ProceduralNode::NodeGui() {
 	}
 }
 
-std::string ProceduralFunction::compile(const std::string& lineEnding) {
+std::string ProceduralFunction::Compile(const std::string& lineEnding) {
 	ProceduralNodeCompiler compiler = {};
 	compiler.lineEnding = lineEnding;
 
+	std::string inputStruct = "ProceduralNodeArgs";
+	std::string outputStruct = "ProceduralEvalResult";
+
 	VariableMap inputVars = {};
 	FindInputs(*mOutputNode, inputVars);
-	compiler.output << "struct ProceduralNodeArgs {" << lineEnding;
+	compiler.output << "struct " << inputStruct << " {" << lineEnding;
 	for (const auto&[name, type] : inputVars) {
 		compiler.output << ' ' << type << ' ' << name << ';' << lineEnding;
 	}
 	compiler.output << "};" << lineEnding << lineEnding;
 
-	compiler.output << "struct ProceduralEvalResult {" << lineEnding;
+	compiler.output << "struct " << outputStruct << " {" << lineEnding;
 	for (const auto&[name, type] : mOutputNode->variableTypes) {
 		compiler.output << ' ' << type << ' ' << name << ';' << lineEnding;
 	}
 	compiler.output << "};" << lineEnding << lineEnding;
 
-	compiler.output << "ProceduralEvalResult eval_node(ProceduralNodeArgs inputs) {" << lineEnding;
-	compiler.output << " ProceduralEvalResult outputs = {};" << lineEnding << lineEnding;
-	mOutputNode->compile(compiler);
+	compiler.output << outputStruct << " " << mEntryPoint << "(" << inputStruct << " inputs) {" << lineEnding;
+	compiler.output << outputStruct << " outputs = {};" << lineEnding << lineEnding;
+	mOutputNode->Compile(compiler);
 	compiler.output << lineEnding;
-	compiler.output << " return outputs;" << lineEnding;
+	compiler.output << "return outputs;" << lineEnding;
 	compiler.output << '}' << lineEnding;
 
 	return compiler.output.str();
 }
+
+
+std::string ProceduralNode::Serialize() const {
+	return "";
+}
+void ProceduralNode::Deserialize(const std::string& serialized) {
+
+}
+
+std::string ProceduralFunction::Serialize() const {
+	return "";
+}
+void ProceduralFunction::Deserialize(const std::string& serialized) {
+
+}
+
 
 }

@@ -19,7 +19,7 @@ public:
 			return HashArgs(ProceduralNode::hash(), variableType);
 		}
 
-		inline NodeOutputMap compile(ProceduralNodeCompiler& compiler) const override {
+		inline NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const override {
 			const auto& variableName = outputs[0];
 			return { { variableName, "inputs." + variableName } };
 		}
@@ -43,12 +43,12 @@ public:
 			return h;
 		}
 
-		inline NodeOutputMap compile(ProceduralNodeCompiler& compiler) const override {
+		inline NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const override {
 			NameMap<std::string> compiledInputs = {};
 			for (const auto&[name, inputPair] : inputs) {
 				const auto&[node, outputName] = inputPair;
 				if (node) {
-					compiledInputs[name] = node->compile(compiler).at(outputName);
+					compiledInputs[name] = node->Compile(compiler).at(outputName);
 				}
 			}
 
@@ -62,13 +62,16 @@ public:
 		}
 	};
 
-	ProceduralFunction(const NameMap<std::string>& outputs, const NameMap<NodeOutputConnection>& inputs = {});
+	ProceduralFunction(const std::string& entryPoint, const NameMap<std::string>& outputs, const NameMap<NodeOutputConnection>& inputs = {});
 
 	inline OutputVariable& Root() { return *mOutputNode; }
 
 	void NodeGui();
 
-	std::string compile(const std::string& lineEnding = "\n");
+	std::string Compile(const std::string& lineEnding = "\n");
+
+	std::string Serialize() const;
+	void Deserialize(const std::string& serialized);
 
 private:
 	// variable name -> type
@@ -84,6 +87,7 @@ private:
 		}
 	}
 
+	std::string mEntryPoint = "proc_main";
 	ref<OutputVariable> mOutputNode = {};
 };
 

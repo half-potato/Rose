@@ -92,7 +92,10 @@ public:
 	virtual void NodeGui();
 	virtual void Gui(float width = 0);
 
-	virtual NodeOutputMap compile(ProceduralNodeCompiler& compiler) const = 0;
+	virtual NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const = 0;
+
+	virtual std::string Serialize() const;
+	virtual void Deserialize(const std::string& serialized);
 };
 
 inline std::pair<NodeOutputMap*, bool> ProceduralNodeCompiler::GetNodeOutputNames(const ProceduralNode* node) {

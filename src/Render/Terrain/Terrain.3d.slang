@@ -8,13 +8,9 @@ import cbt.leb;
 PROCEDURAL_NODE_SRC
 #else
 #error "must define PROCEDURAL_NODE_SRC"
-struct ProceduralNodeArgs {
-    float3 position;
-};
-struct ProceduralEvalResult {
-    float height;
-};
-ProceduralEvalResult eval_node(ProceduralNodeArgs args) { return { 0 }; }
+struct ProceduralNodeArgs { float3 position; };
+struct ProceduralEvalResult { float height; };
+ProceduralEvalResult GetHeight(ProceduralNodeArgs args) { return { 0 }; }
 #endif
 
 using namespace RoseEngine;
@@ -48,7 +44,7 @@ float3 GetPosition(float2 uv) {
     }
     p = normalize(p);
 
-    return p * eval_node({ p }).height;
+    return p * GetHeight({ p }).height;
 }
 
 float3x2 GetNodeUvs(const cbt_Node node) {

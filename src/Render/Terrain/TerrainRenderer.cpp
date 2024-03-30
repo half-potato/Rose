@@ -10,7 +10,7 @@ void TerrainRenderer::Initialize(CommandContext& context) {
 
 	NodeOutputConnection posInput{ make_ref<ProceduralFunction::InputVariable>("position", "float3"), "position" };
 
-	heightFunction = make_ref<ProceduralFunction>(
+	heightFunction = make_ref<ProceduralFunction>("GetHeight",
 		// outputs
 		NameMap<std::string>{ { "height", "float" } },
 		// inputs
@@ -26,7 +26,7 @@ void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 
 	size_t nodeHash = heightFunction->Root().hash();
 	if (nodeHash != nodeTreeHash)
-		compiledHeightFunction = heightFunction->compile("");
+		compiledHeightFunction = heightFunction->Compile("");
 
 	ShaderDefines defs {
 		{ "CBT_HEAP_BUFFER_COUNT", std::to_string(cbt->ArraySize()) },

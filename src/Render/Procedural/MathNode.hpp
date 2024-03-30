@@ -1,41 +1,28 @@
 #pragma once
 
-#include <glm/glm.hpp>
-#include <Core/Gui.hpp>
-#include <imnodes.h>
-#include <imgui/imgui_stdlib.h>
 #include "ProceduralNode.hpp"
 
 namespace RoseEngine {
 
-// This node 'compiles' to the given expression
+// This node is effectively a passthrough which 'compiles' to the given expression
 class ExpressionNode : public ProceduralNode {
 public:
 	std::string value = "0";
 
 	inline ExpressionNode(const std::string& value) : value(value) {}
+
 	inline size_t hash() const override {
 		return HashArgs(ProceduralNode::hash(), value);
 	}
-	inline NodeOutputMap compile(ProceduralNodeCompiler& compiler) const override {
+
+	inline NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const override {
 		return { {  NodeOutputConnection::gDefaultOutputName, value } };
 	}
 
-	inline void Gui(float width = 0) override {
-		ImNodes::BeginNodeTitleBar();
-		ImGui::TextUnformatted("Expression");
-		ImNodes::EndNodeTitleBar();
-		ImGui::SetNextItemWidth(150);
+	void Gui(float width = 0) override;
 
-		{
-			auto& name = outputs[0];
-			ImNodes::BeginOutputAttribute((int)HashArgs(this, name, 1));
-
-			ImGui::InputText("Value", &value);
-
-			ImNodes::EndOutputAttribute();
-		}
-	}
+	std::string Serialize() const override;
+	void Deserialize(const std::string& serialized) override;
 };
 
 class MathNode : public ProceduralNode {
@@ -118,7 +105,6 @@ public:
 			case MathOp::eCross:     return "cross";
 		}
 	}
-
 	inline static uint32_t GetArgCount(MathOp op) {
 		switch (op) {
 			default: return 0; break;
@@ -174,89 +160,12 @@ public:
 		return HashArgs(ProceduralNode::hash(), op);
 	}
 
-	inline NodeOutputMap compile(ProceduralNodeCompiler& compiler) const override {
-		auto[vars, cached] = compiler.GetNodeOutputNames(this);
-		if (cached) return *vars;
+	NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const override;
 
-		uint32_t numArgs = GetArgCount(op);
+	void Gui(float width = 0) override;
 
-		std::string a, b, c;
-		if (numArgs > 0) {
-			const auto& [node, output] = inputs.at("a");
-			if (node)
-				a = node->compile(compiler).at(output);
-			else
-				a = "0";
-		}
-		if (numArgs > 1) {
-			const auto& [node, output] = inputs.at("b");
-			if (node)
-				b = node->compile(compiler).at(output);
-			else
-				b = "0";
-		}
-		if (numArgs > 2) {
-			const auto& [node, output] = inputs.at("c");
-			if (node)
-				c = node->compile(compiler).at(output);
-			else
-				c = "0";
-		}
-
-		compiler.output << "let " << vars->begin()->second << " = " << GetOpName(op) << "(";
-		if (numArgs > 0) compiler.output << a;
-		if (numArgs > 1) compiler.output << ", " << b;
-		if (numArgs > 2) compiler.output << ", " << c;
-		compiler.output << ");" << compiler.lineEnding;
-
-		return *vars;
-	}
-
-	inline void Gui(float width = 0) override {
-		ImNodes::BeginNodeTitleBar();
-		ImGui::TextUnformatted("Math Op");
-		ImNodes::EndNodeTitleBar();
-		ImGui::SetNextItemWidth(150);
-		float w;
-		if (ImGui::BeginCombo("Op", GetOpName(op))) {
-			w = ImGui::GetItemRectSize().x;
-			for (uint32_t i = 0; i < MathOp::eOpCount; i++) {
-				if (ImGui::Selectable(GetOpName((MathOp)i), op == (MathOp)i)) {
-					op = (MathOp)i;
-				}
-			}
-			ImGui::EndCombo();
-		} else
-			w = ImGui::GetItemRectSize().x;
-
-		auto it = inputs.begin();
-		uint32_t argCount = GetArgCount(op);
-		for (uint32_t i = 0; i < std::max(outputs.size(), inputs.size()); i++) {
-			float offset = w;
-			bool inputRow = it != inputs.end() && i < argCount;
-			if (inputRow) {
-				auto&[name, c] = *it;
-				ImNodes::BeginInputAttribute((int)HashArgs(this, name));
-				ImGui::TextUnformatted(name.c_str());
-				offset -= ImGui::GetItemRectSize().x;
-				ImNodes::EndInputAttribute();
-				it++;
-			}
-
-			if (i < outputs.size()) {
-				auto& name = outputs[i];
-				if (inputRow)
-					ImGui::SameLine();
-				ImVec2 s = ImGui::CalcTextSize(name.c_str());
-				offset -= s.x;
-				ImGui::Dummy(ImVec2(offset, s.y));
-				ImNodes::BeginOutputAttribute((int)HashArgs(this, name, 1));
-				ImGui::SameLine();
-				ImGui::TextUnformatted(name.c_str());
-				ImNodes::EndOutputAttribute();
-			}
-		}
-	}
+	std::string Serialize() const override;
+	void Deserialize(const std::string& serialized) override;
 };
 
 };
