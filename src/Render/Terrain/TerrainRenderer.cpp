@@ -8,15 +8,14 @@ namespace RoseEngine {
 void TerrainRenderer::Initialize(CommandContext& context) {
 	cbt = ConcurrentBinaryTree::Create(context, 20, 6);
 
-	NodeOutputConnection posInput{ make_ref<ProceduralFunction::InputVariable>("position", "float3"), "position" };
-
 	heightFunction = make_ref<ProceduralFunction>("GetHeight",
 		// outputs
 		NameMap<std::string>{ { "height", "float" } },
 		// inputs
 		NameMap<NodeOutputConnection>{ { "height",
 			make_ref<MathNode>(MathNode::MathOp::eAdd,
-				make_ref<MathNode>(MathNode::MathOp::eLength, posInput),
+				make_ref<MathNode>(MathNode::MathOp::eLength,
+					NodeOutputConnection{ make_ref<ProceduralFunction::InputVariable>("position", "float3"), "position" }),
 				make_ref<ExpressionNode>("1")) }
 	});
 }
