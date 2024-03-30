@@ -18,7 +18,13 @@ struct WindowedApp {
 
 	uint32_t presentQueueFamily = 0;
 
-	std::unordered_map<std::string, std::pair<bool, std::function<void()>>> widgets = {};
+	struct Widget {
+		std::function<void()> drawFn;
+		bool visible = true;
+		ImGuiWindowFlags flags = (ImGuiWindowFlags)0;
+	};
+
+	std::unordered_map<std::string, Widget> widgets = {};
 
 	double dt = 0;
 	double fps = 0;
@@ -142,8 +148,8 @@ struct WindowedApp {
 			ImGui::Text("%.1f fps (%.1f ms)", fps, 1000 / fps);
 		});
 
-		AddWidget("Gui demo", [&]() {
-			ImGui::ShowDemoWindow(&widgets["Demo"].first);
+		AddWidget("Dear ImGui Demo", [&]() {
+			ImGui::ShowDemoWindow(&widgets["Dear ImGui Demo"].visible);
 		});
 
 	}
@@ -152,8 +158,8 @@ struct WindowedApp {
 		Gui::Destroy();
 	}
 
-	inline void AddWidget(const std::string& name, auto fn, const bool initialState = false) {
-		widgets[name] = std::make_pair(initialState, fn);
+	inline void AddWidget(const std::string& name, auto fn, const bool initialState = false, const ImGuiWindowFlags flags = (ImGuiWindowFlags)0) {
+		widgets[name] = Widget{fn, initialState, flags};
 	}
 
 	inline bool CreateSwapchain() {
@@ -186,7 +192,7 @@ struct WindowedApp {
 			if (ImGui::BeginMenu("View")) {
 				for (auto&[name, widget] : widgets) {
 					if (ImGui::MenuItem(name.c_str())) {
-						widget.first = !widget.first;
+						widget.visible = !widget.visible;
 					}
 				}
 				ImGui::EndMenu();
@@ -211,9 +217,9 @@ struct WindowedApp {
 		// Widget windows
 
 		for (auto&[name, widget] : widgets) {
-			if (widget.first) {
-				if (ImGui::Begin(name.c_str(), &widget.first))
-					widget.second();
+			if (widget.visible) {
+				if (ImGui::Begin(name.c_str(), &widget.visible, widget.flags))
+					widget.drawFn();
 				ImGui::End();
 			}
 		}

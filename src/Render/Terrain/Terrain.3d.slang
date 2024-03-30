@@ -1,21 +1,30 @@
 import Render.GBuffer;
 import Render.Transform;
 import cbt.leb;
-import Heightmap;
+
+#ifdef PROCEDURAL_NODE_SRC
+#define add(a, b) ((a) + (b))
+#define sub(a, b) ((a) - (b))
+PROCEDURAL_NODE_SRC
+#else
+#error "must define PROCEDURAL_NODE_SRC"
+struct ProceduralNodeArgs {
+    float3 position;
+};
+struct ProceduralEvalResult {
+    float height;
+};
+ProceduralEvalResult eval_node(ProceduralNodeArgs args) { return { 0 }; }
+#endif
 
 using namespace RoseEngine;
 
 uniform Transform worldToCamera;
 uniform Transform projection;
 
-uniform float heightScale;
-uniform float innerRadius;
-uniform float targetSize;
-uniform float noiseScale;
-uniform uint shadowSteps;
-uniform uint2 screenSize;
-
 uniform float3 lightDir;
+uniform float targetSize;
+uniform uint2 screenSize;
 
 [[vk::push_constant]]
 cbuffer PushConstants {
@@ -39,8 +48,7 @@ float3 GetPosition(float2 uv) {
     }
     p = normalize(p);
 
-    const float h = innerRadius + heightScale * fbm(p * noiseScale);
-    return p * h;
+    return p * eval_node({ p }).height;
 }
 
 float3x2 GetNodeUvs(const cbt_Node node) {

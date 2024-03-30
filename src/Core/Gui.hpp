@@ -118,7 +118,7 @@ public:
 	static void Render(CommandContext& context, const ImageView& renderTarget);
 
 private:
-	static std::weak_ptr<Device> mDevice;
+	static weak_ref<Device> mDevice;
 
 	static vk::raii::RenderPass mRenderPass;
 	static uint32_t mQueueFamily;

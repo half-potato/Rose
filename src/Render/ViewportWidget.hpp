@@ -24,7 +24,7 @@ public:
 
 class ViewportWidget {
 private:
-	float3 cameraPos   = float3(0, 10, 10);
+	float3 cameraPos   = float3(0, 2, 2);
 	float2 cameraAngle = float2(-float(M_PI)/4,0);
 	float  fovY  = 50.f; // in degrees
 	float  nearZ = 0.01f;

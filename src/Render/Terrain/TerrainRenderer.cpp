@@ -1,18 +1,34 @@
+#include <iostream>
 #include "TerrainRenderer.hpp"
 #include <Core/Gui.hpp>
+#include <Render/Procedural/MathNode.hpp>
 
 namespace RoseEngine {
 
 void TerrainRenderer::Initialize(CommandContext& context) {
 	cbt = ConcurrentBinaryTree::Create(context, 20, 6);
+
+	NodeOutputConnection posInput{ make_ref<ProceduralInputNode>("position", "float3"), "position" };
+
+	nodeTree = make_ref<ProceduralNodeTree>("height", "float",
+		make_ref<MathNode>(MathNode::MathOp::eAdd,
+			make_ref<MathNode>(MathNode::MathOp::eLength, posInput),
+			make_ref<ExpressionNode>("1")));
 }
 
 void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 	auto srcFile = FindShaderPath("Terrain.3d.slang");
 
-	ShaderDefines defs { { "CBT_HEAP_BUFFER_COUNT", std::to_string(cbt->ArraySize()) } };
+	size_t nodeHash = nodeTree->Root().hash();
 
-	if (!subdividePipeline || subdividePipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->IsStale())
+	std::string nodeSrc = nodeTree->compile("");
+
+	ShaderDefines defs {
+		{ "CBT_HEAP_BUFFER_COUNT", std::to_string(cbt->ArraySize()) },
+		{ "PROCEDURAL_NODE_SRC", nodeSrc },
+	};
+
+	if (!subdividePipeline || subdividePipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->IsStale() || nodeHash != nodeTreeHash)
 		subdividePipeline = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "Subdivide", "sm_6_7", defs));
 
 	ref<const ShaderModule> vertexShader, fragmentShader;
@@ -20,9 +36,9 @@ void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 		vertexShader   = drawPipeline->GetShader(vk::ShaderStageFlagBits::eVertex);
 		fragmentShader = drawPipeline->GetShader(vk::ShaderStageFlagBits::eFragment);
 	}
-	if (!vertexShader || vertexShader->IsStale())
+	if (!vertexShader || vertexShader->IsStale() || nodeHash != nodeTreeHash)
 		vertexShader   = ShaderModule::Create(device, srcFile, "vertexMain", "sm_6_7", defs);
-	if (!fragmentShader || fragmentShader->IsStale())
+	if (!fragmentShader || fragmentShader->IsStale()|| nodeHash != nodeTreeHash)
 		fragmentShader = ShaderModule::Create(device, srcFile, "fragmentMain", "sm_6_7", defs);
 
 	GraphicsPipelineInfo pipelineInfo {
@@ -62,6 +78,7 @@ void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 	drawPipeline = Pipeline::CreateGraphics(device, vertexShader, fragmentShader, pipelineInfo);
 
 	pipelineFormat = format;
+	nodeTreeHash = nodeHash;
 }
 
 void TerrainRenderer::InspectorGui(CommandContext& context) {
@@ -78,12 +95,6 @@ void TerrainRenderer::InspectorGui(CommandContext& context) {
 
 		auto[size,unit] = FormatBytes(cbt->GetBuffer(0).size());
 		ImGui::LabelText("Size: ", "%llu %s", size, unit);
-	}
-
-	if (ImGui::CollapsingHeader("Terrain")) {
-		ImGui::DragFloat("Height scale", &heightScale, .1f);
-		ImGui::DragFloat("Inner radius", &innerRadius, .1f);
-		ImGui::DragFloat("Noise scale", &noiseScale, .01f);
 	}
 
 	if (ImGui::CollapsingHeader("Rendering")) {
@@ -115,12 +126,9 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 	ShaderParameter params = cbt->GetShaderParameter();
 	params["worldToCamera"] = view;
 	params["projection"] = projection;
-	params["screenSize"] = uint2(gbuffer.renderTarget.Extent());
-	params["targetSize"] = targetTriangleSize;
-	params["innerRadius"] = innerRadius;
-	params["heightScale"] = heightScale;
-	params["noiseScale"] = noiseScale;
 	params["lightDir"] = lightDir;
+	params["targetSize"] = targetTriangleSize;
+	params["screenSize"] = uint2(gbuffer.renderTarget.Extent());
 
 	// subdivision
 	{
@@ -168,6 +176,10 @@ void TerrainRenderer::Render(CommandContext& context) {
 		context->pushConstants<uint32_t>(***drawPipeline->Layout(), vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, i);
 		context->drawIndirect(**drawIndirectArgs.mBuffer, drawIndirectArgs.mOffset + i*sizeof(uint4), 1, sizeof(uint4));
 	}
+}
+
+void TerrainRenderer::NodeGui() {
+	nodeTree->NodeGui();
 }
 
 }

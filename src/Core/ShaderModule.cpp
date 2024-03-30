@@ -245,10 +245,7 @@ ref<ShaderModule> ShaderModule::Create(
 		// compile
 
 		SlangResult r = request->compile();
-		std::cout << "Compiled " << sourceFile.string() << ":" << entryPoint;
-		for (const auto&[d,v] : defines)
-			std::cout << " -D" << d << "=" << v;
-		std::cout << std::endl;
+		std::cout << "Compiled " << sourceFile.string() << ":" << entryPoint << std::endl;
 		const char* msg = request->getDiagnosticOutput();
 		if (msg) std::cout << msg;
 		if (SLANG_FAILED(r)) {

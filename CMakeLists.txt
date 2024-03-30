@@ -44,19 +44,15 @@ link_libraries(glm)
 
 file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
 file(GLOB_RECURSE RENDER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Render/**.cpp")
+file(GLOB IMGUI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
 add_library(RoseLib
 	${CORE_SRCS}
 	${RENDER_SRCS}
 	thirdparty/miniz.c
 	thirdparty/pugixml.cpp
-	thirdparty/imgui/imgui_demo.cpp
-	thirdparty/imgui/imgui_draw.cpp
-	thirdparty/imgui/imgui_tables.cpp
-	thirdparty/imgui/imgui_widgets.cpp
-	thirdparty/imgui/imgui_impl_glfw.cpp
-	thirdparty/imgui/imgui_impl_vulkan.cpp
-	thirdparty/imgui/imgui.cpp
-	thirdparty/ImGuizmo.cpp)
+	${IMGUI_SRCS}
+	thirdparty/ImGuizmo.cpp
+	thirdparty/imnodes.cpp)
 set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
 
 add_executable(Rose src/main.cpp)

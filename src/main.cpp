@@ -9,8 +9,10 @@ using namespace RoseEngine;
 int main(int argc, const char** argv) {
 	WindowedApp app(std::span { argv, (size_t)argc });
 
+	auto terrain = make_ref<TerrainRenderer>();
+
 	ViewportWidget widget(*app.contexts[0], {
-		make_ref<TerrainRenderer>(),
+		terrain,
 		make_ref<ObjectRenderer>(),
 	});
 
@@ -20,6 +22,10 @@ int main(int argc, const char** argv) {
 
 	app.AddWidget("Viewport", [&]() {
 		widget.Render(*app.contexts[app.swapchain->ImageIndex()], app.dt);
+	}, true);
+
+	app.AddWidget("Terrain nodes", [&]() {
+		terrain->NodeGui();
 	}, true);
 
 	app.Run();

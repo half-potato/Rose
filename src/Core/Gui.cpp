@@ -7,10 +7,11 @@
 #include <imgui/imgui_internal.h>
 #include <imgui/imgui_spectrum.h>
 #include <ImGuizmo.h>
+#include <imnodes.h>
 
 namespace RoseEngine {
 
-std::weak_ptr<Device> Gui::mDevice = {};
+weak_ref<Device> Gui::mDevice = {};
 vk::raii::RenderPass Gui::mRenderPass = nullptr;
 uint32_t Gui::mQueueFamily = 0;
 std::unordered_map<vk::Image, vk::raii::Framebuffer> Gui::mFramebuffers = {};
@@ -172,6 +173,8 @@ void Gui::Initialize(CommandContext& context, const Window& window, const Swapch
 	mDevice = device;
 
 	ImGui::CreateContext();
+	ImNodes::CreateContext();
+	ImNodes::LoadCurrentEditorStateFromIniFile("imnodes.ini");
 
 	// Setup Dear ImGui style
 	float scale = 1.25f;
@@ -254,11 +257,14 @@ void Gui::Initialize(CommandContext& context, const Window& window, const Swapch
 	device->Wait( context.Submit() );
 
 	ImGui_ImplVulkan_DestroyFontUploadObjects();
+
 }
 void Gui::Destroy() {
 	if (*mRenderPass) {
+		ImNodes::SaveCurrentEditorStateToIniFile("imnodes.ini");
 		ImGui_ImplVulkan_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
+		ImNodes::DestroyContext();
 		ImGui::DestroyContext();
 		mRenderPass.clear();
 		mFramebuffers.clear();

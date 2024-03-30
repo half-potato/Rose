@@ -93,7 +93,7 @@ public:
 
 	inline bool IsStale() const {
 		for (const auto& dep : mSourceFiles)
-			if (std::filesystem::last_write_time(dep) > mCompileTime)
+			if (std::filesystem::exists(dep) && std::filesystem::last_write_time(dep) > mCompileTime)
 				return true;
 		return false;
 	}
