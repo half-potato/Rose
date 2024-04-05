@@ -27,33 +27,22 @@ NodeOutputMap MathNode::Compile(ProceduralNodeCompiler& compiler) const {
 
 	uint32_t numArgs = GetArgCount(op);
 
-	std::string a, b, c;
-	if (numArgs > 0) {
-		const auto& [node, output] = inputs.at("a");
+	std::string args[3];
+	uint32_t i = 0;
+	for (auto arg : { "x", "y", "z" }) {
+		if (i >= numArgs) break;
+		const auto& [node, output] = inputs.at(arg);
 		if (node)
-			a = node->Compile(compiler).at(output);
+			args[i] = node->Compile(compiler).at(output);
 		else
-			a = "0";
-	}
-	if (numArgs > 1) {
-		const auto& [node, output] = inputs.at("b");
-		if (node)
-			b = node->Compile(compiler).at(output);
-		else
-			b = "0";
-	}
-	if (numArgs > 2) {
-		const auto& [node, output] = inputs.at("c");
-		if (node)
-			c = node->Compile(compiler).at(output);
-		else
-			c = "0";
+			args[i] = "0";
+		i++;
 	}
 
 	compiler.output << "let " << vars->begin()->second << " = " << GetOpName(op) << "(";
-	if (numArgs > 0) compiler.output << a;
-	if (numArgs > 1) compiler.output << ", " << b;
-	if (numArgs > 2) compiler.output << ", " << c;
+	if (numArgs > 0) compiler.output << args[0];
+	if (numArgs > 1) compiler.output << ", " << args[1];
+	if (numArgs > 2) compiler.output << ", " << args[2];
 	compiler.output << ");" << compiler.lineEnding;
 
 	return *vars;
@@ -104,21 +93,5 @@ void MathNode::Gui(float width) {
 		}
 	}
 }
-
-
-std::string ExpressionNode::Serialize() const {
-	return "";
-}
-void ExpressionNode::Deserialize(const std::string& serialized) {
-
-}
-
-std::string MathNode::Serialize() const {
-	return "";
-}
-void MathNode::Deserialize(const std::string& serialized) {
-
-}
-
 
 }

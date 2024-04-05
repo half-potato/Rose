@@ -17,7 +17,7 @@ private:
 	bool wire = false;
 	bool split = true;
 
-	ref<ProceduralFunction> heightFunction = {};
+	ProceduralFunction heightFunction = {};
 	size_t nodeTreeHash = 0;
 	std::string compiledHeightFunction = {};
 
@@ -31,6 +31,7 @@ private:
 	void CreatePipelines(Device& device, vk::Format format);
 
 public:
+	~TerrainRenderer();
 	void Initialize(CommandContext& context) override;
 	void PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) override;
 	void Render(CommandContext& context) override;

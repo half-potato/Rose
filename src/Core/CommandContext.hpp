@@ -493,7 +493,7 @@ public:
 		BindParameters(*pipeline.Layout(), rootParameter);
 		ExecuteBarriers();
 
-		auto dim = GetDispatchDim(pipeline.GetShader(vk::ShaderStageFlagBits::eCompute)->WorkgroupSize(), threadCount);
+		auto dim = GetDispatchDim(pipeline.GetShader()->WorkgroupSize(), threadCount);
 		mCommandBuffer.dispatch(dim.x, dim.y, dim.z);
 	}
 	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1)   , rootParameter); }

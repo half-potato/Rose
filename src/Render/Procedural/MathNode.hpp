@@ -9,6 +9,11 @@ class ExpressionNode : public ProceduralNode {
 public:
 	std::string value = "0";
 
+	ExpressionNode() = default;
+	ExpressionNode(const ExpressionNode&) = default;
+	ExpressionNode(ExpressionNode&&) = default;
+	ExpressionNode& operator=(const ExpressionNode&) = default;
+	ExpressionNode& operator=(ExpressionNode&&) = default;
 	inline ExpressionNode(const std::string& value) : value(value) {}
 
 	inline size_t hash() const override {
@@ -21,8 +26,18 @@ public:
 
 	void Gui(float width = 0) override;
 
-	std::string Serialize() const override;
-	void Deserialize(const std::string& serialized) override;
+	inline virtual const char* GetType() const { return "ExpressionNode"; }
+	inline virtual json Serialize() const {
+		json dst = ProceduralNode::Serialize();
+		dst["expression"] = value;
+		return dst;
+	}
+	inline static ref<ProceduralNode> Deserialize(const json& serialized) {
+		auto n = make_ref<ExpressionNode>(serialized["expression"].get<std::string>());
+		n->inputs.clear();
+		n->outputs.clear();
+		return n;
+	}
 };
 
 class MathNode : public ProceduralNode {
@@ -65,7 +80,7 @@ public:
 		eCross,
 		eOpCount
 	};
-	inline static const char* GetOpName(MathOp op) {
+	inline static constexpr const char* GetOpName(MathOp op) {
 		switch (op) {
 			default: return ""; break;
 			case MathOp::eAdd:       return "add";
@@ -105,7 +120,44 @@ public:
 			case MathOp::eCross:     return "cross";
 		}
 	}
-	inline static uint32_t GetArgCount(MathOp op) {
+	inline static const NameMap<MathOp> gNameMap = {
+		{ "add", MathOp::eAdd },
+		{ "sub", MathOp::eSubtract },
+		{ "mul", MathOp::eMultiply },
+		{ "div", MathOp::eDivide },
+		{ "pow", MathOp::ePow },
+		{ "exp", MathOp::eExp },
+		{ "exp2", MathOp::eExp2 },
+		{ "log", MathOp::eLog },
+		{ "log2", MathOp::eLog2 },
+		{ "log10", MathOp::eLog10 },
+		{ "round", MathOp::eRound },
+		{ "sqrt", MathOp::eSqrt },
+		{ "step", MathOp::eStep },
+		{ "min", MathOp::eMin },
+		{ "max", MathOp::eMax },
+		{ "floor", MathOp::eFloor },
+		{ "ceil", MathOp::eCeil },
+		{ "frac", MathOp::eFrac },
+		{ "trunc", MathOp::eTrunc },
+		{ "sin", MathOp::eSin },
+		{ "cos", MathOp::eCos },
+		{ "tan", MathOp::eTan },
+		{ "asin", MathOp::eAsin },
+		{ "acos", MathOp::eAcos },
+		{ "atan", MathOp::eAtan },
+		{ "atan2", MathOp::eAtan2 },
+		{ "sinh", MathOp::eSinh },
+		{ "cosh", MathOp::eCosh },
+		{ "tanh", MathOp::eTanh },
+		{ "lerp", MathOp::eLerp },
+		{ "clamp", MathOp::eClamp },
+		{ "length", MathOp::eLength },
+		{ "normalize", MathOp::eNormalize },
+		{ "dot", MathOp::eDot },
+		{ "cross", MathOp::eCross },
+	};
+	inline static constexpr uint32_t GetArgCount(MathOp op) {
 		switch (op) {
 			default: return 0; break;
 			case MathOp::eAdd:       return 2;
@@ -148,11 +200,11 @@ public:
 
 	MathOp op = MathOp::eAdd;
 
-	inline MathNode(MathOp op_ = MathOp::eAdd, const NodeOutputConnection& a = {}, const NodeOutputConnection& b = {}, const NodeOutputConnection& c = {}) : op(op_) {
+	inline MathNode(MathOp op_ = MathOp::eAdd, const NodeOutputConnection& x = {}, const NodeOutputConnection& y = {}, const NodeOutputConnection& z = {}) : op(op_) {
 		inputs = {
-			{ "a", a },
-			{ "b", b },
-			{ "c", c }
+			{ "x", x },
+			{ "y", y },
+			{ "z", z }
 		};
 	}
 
@@ -164,8 +216,19 @@ public:
 
 	void Gui(float width = 0) override;
 
-	std::string Serialize() const override;
-	void Deserialize(const std::string& serialized) override;
+	inline virtual const char* GetType() const { return "MathNode"; }
+	inline virtual json Serialize() const {
+		json dst = ProceduralNode::Serialize();
+		dst["op"] = GetOpName(op);
+		return dst;
+	}
+	inline static ref<ProceduralNode> Deserialize(const json& serialized) {
+		std::string opName = serialized["op"].get<std::string>();
+		auto n = make_ref<MathNode>(gNameMap.at(opName));
+		n->inputs.clear();
+		n->outputs.clear();
+		return n;
+	}
 };
 
 };

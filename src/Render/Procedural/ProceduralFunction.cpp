@@ -1,5 +1,6 @@
 #include "ProceduralFunction.hpp"
 #include <imnodes.h>
+#include "MathNode.hpp"
 
 namespace RoseEngine {
 
@@ -8,6 +9,37 @@ ProceduralFunction::ProceduralFunction(const std::string& entryPoint, const Name
 	mOutputNode = make_ref<OutputVariable>(outputTypes);
 	for (const auto& [outputName, input] : inputs)
 		mOutputNode->SetInput(outputName, input);
+}
+
+std::string ProceduralFunction::Compile(const std::string& lineEnding) {
+	ProceduralNodeCompiler compiler = {};
+	compiler.lineEnding = lineEnding;
+
+	std::string inputStruct = "ProceduralNodeArgs";
+	std::string outputStruct = "ProceduralEvalResult";
+
+	VariableMap inputVars = {};
+	FindInputs(*mOutputNode, inputVars);
+	compiler.output << "struct " << inputStruct << " {" << lineEnding;
+	for (const auto&[name, type] : inputVars) {
+		compiler.output << ' ' << type << ' ' << name << ';' << lineEnding;
+	}
+	compiler.output << "};" << lineEnding << lineEnding;
+
+	compiler.output << "struct " << outputStruct << " {" << lineEnding;
+	for (const auto&[name, type] : mOutputNode->variableTypes) {
+		compiler.output << ' ' << type << ' ' << name << ';' << lineEnding;
+	}
+	compiler.output << "};" << lineEnding << lineEnding;
+
+	compiler.output << outputStruct << " " << mEntryPoint << "(" << inputStruct << " inputs) {" << lineEnding;
+	compiler.output << outputStruct << " outputs = {};" << lineEnding << lineEnding;
+	mOutputNode->Compile(compiler);
+	compiler.output << lineEnding;
+	compiler.output << "return outputs;" << lineEnding;
+	compiler.output << '}' << lineEnding;
+
+	return compiler.output.str();
 }
 
 void ProceduralFunction::NodeGui() {
@@ -52,6 +84,11 @@ void ProceduralNode::NodeGui() {
 	Gui();
 	ImNodes::EndNode();
 
+	if (hasPos) {
+		ImNodes::SetNodeGridSpacePos((int)HashArgs(this), std::bit_cast<ImVec2>(pos));
+		hasPos = false;
+	}
+
 	for (auto&[inputName, c] : inputs) {
 		auto&[n, outputName] = c;
 		if (n) {
@@ -61,51 +98,69 @@ void ProceduralNode::NodeGui() {
 	}
 }
 
-std::string ProceduralFunction::Compile(const std::string& lineEnding) {
-	ProceduralNodeCompiler compiler = {};
-	compiler.lineEnding = lineEnding;
-
-	std::string inputStruct = "ProceduralNodeArgs";
-	std::string outputStruct = "ProceduralEvalResult";
-
-	VariableMap inputVars = {};
-	FindInputs(*mOutputNode, inputVars);
-	compiler.output << "struct " << inputStruct << " {" << lineEnding;
-	for (const auto&[name, type] : inputVars) {
-		compiler.output << ' ' << type << ' ' << name << ';' << lineEnding;
+json ProceduralNode::Serialize() const {
+	json dst = json::object();
+	dst["type"] = std::string(GetType());
+	dst["inputs"] = json::object();
+	for (const auto&[name, c] : inputs) {
+		const auto&[node, outputName] = c;
+		dst["inputs"][name] = json::object({
+			{"outputName", outputName },
+			{"node", node ? node->Serialize() : json::object() },
+		});
 	}
-	compiler.output << "};" << lineEnding << lineEnding;
+	dst["outputs"] = json::array();
+	for (const auto& name : outputs)
+		dst["outputs"].emplace_back(name);
+	ImVec2 p = ImNodes::GetNodeGridSpacePos((int)HashArgs(this));
+	dst["pos"] = { p.x, p.y};
+	return dst;
+}
 
-	compiler.output << "struct " << outputStruct << " {" << lineEnding;
-	for (const auto&[name, type] : mOutputNode->variableTypes) {
-		compiler.output << ' ' << type << ' ' << name << ';' << lineEnding;
+ref<ProceduralNode> ProceduralNode::DeserializeNode(const json& serialized) {
+	enum NodeType {
+		eMathNode,
+		eExpressionNode,
+		eInputVariable,
+		eOutputVariable
+	};
+	static const NameMap<NodeType> nodeTypes = {
+		{ "MathNode",       NodeType::eMathNode },
+		{ "ExpressionNode", NodeType::eExpressionNode },
+		{ "InputVariable",  NodeType::eInputVariable },
+		{ "OutputVariable", NodeType::eOutputVariable },
+	};
+	ref<ProceduralNode> node;
+	NodeType type = nodeTypes.at(serialized["type"].get<std::string>());
+	switch (type) {
+		case NodeType::eMathNode:
+			node = MathNode::Deserialize(serialized);
+			break;
+		case NodeType::eExpressionNode:
+			node = ExpressionNode::Deserialize(serialized);
+			break;
+		case NodeType::eInputVariable:
+			node = ProceduralFunction::InputVariable::Deserialize(serialized);
+			break;
+		case NodeType::eOutputVariable:
+			node = ProceduralFunction::OutputVariable::Deserialize(serialized);
+			break;
 	}
-	compiler.output << "};" << lineEnding << lineEnding;
 
-	compiler.output << outputStruct << " " << mEntryPoint << "(" << inputStruct << " inputs) {" << lineEnding;
-	compiler.output << outputStruct << " outputs = {};" << lineEnding << lineEnding;
-	mOutputNode->Compile(compiler);
-	compiler.output << lineEnding;
-	compiler.output << "return outputs;" << lineEnding;
-	compiler.output << '}' << lineEnding;
+	for (const auto&[name,i] : serialized["inputs"].items()) {
+		node->inputs.emplace(name, NodeOutputConnection(
+			i["node"].contains("type") ? ProceduralNode::DeserializeNode(i["node"]) : ref<ProceduralNode>{},
+			i["outputName"].get<std::string>()));
+	}
 
-	return compiler.output.str();
+	for (const auto& i : serialized["outputs"]) {
+		node->outputs.emplace_back(i.get<std::string>());
+	}
+
+	node->pos = float2(serialized["pos"][0].get<float>(), serialized["pos"][1].get<float>());
+	node->hasPos = true;
+
+	return node;
 }
-
-
-std::string ProceduralNode::Serialize() const {
-	return "";
-}
-void ProceduralNode::Deserialize(const std::string& serialized) {
-
-}
-
-std::string ProceduralFunction::Serialize() const {
-	return "";
-}
-void ProceduralFunction::Deserialize(const std::string& serialized) {
-
-}
-
 
 }

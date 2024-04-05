@@ -9,8 +9,13 @@ public:
 	// Represents a single input variable, which is stored as the output of this node
 	class InputVariable : public ProceduralNode {
 	public:
-		std::string variableType;
+		std::string variableType = {};
 
+		InputVariable() = default;
+		InputVariable(const InputVariable&) = default;
+		InputVariable(InputVariable&&) = default;
+		InputVariable& operator=(const InputVariable&) = default;
+		InputVariable& operator=(InputVariable&&) = default;
 		inline InputVariable(const std::string& varName, const std::string& varType) : variableType(varType) {
 			outputs = { varName };
 		}
@@ -23,6 +28,20 @@ public:
 			const auto& variableName = outputs[0];
 			return { { variableName, "inputs." + variableName } };
 		}
+
+		inline virtual const char* GetType() const { return "InputVariable"; }
+		inline virtual json Serialize() const {
+			json dst = ProceduralNode::Serialize();
+			dst["variableType"] = variableType;
+			return dst;
+		}
+		inline static ref<ProceduralNode> Deserialize(const json& serialized) {
+			auto n = make_ref<InputVariable>();
+			n->inputs.clear();
+			n->outputs.clear();
+			n->variableType = serialized["variableType"].get<std::string>();
+			return n;
+		}
 	};
 
 	// Represents all output variables, which are stored as the inputs to this node
@@ -30,6 +49,11 @@ public:
 	public:
 		NameMap<std::string> variableTypes;
 
+		OutputVariable() = default;
+		OutputVariable(const OutputVariable&) = default;
+		OutputVariable(OutputVariable&&) = default;
+		OutputVariable& operator=(const OutputVariable&) = default;
+		OutputVariable& operator=(OutputVariable&&) = default;
 		inline OutputVariable(const NameMap<std::string>& varTypes) : variableTypes(varTypes) {
 			for (const auto&[name, type] : variableTypes)
 				inputs[name] = {};
@@ -60,9 +84,32 @@ public:
 			}
 			return {};
 		}
+
+		inline virtual const char* GetType() const { return "OutputVariable"; }
+		inline virtual json Serialize() const {
+			json dst = ProceduralNode::Serialize();
+			dst["variableTypes"] = json::object();
+			for (const auto&[var, varType] : variableTypes)
+				dst["variableTypes"][var] = varType;
+			return dst;
+		}
+		inline static ref<ProceduralNode> Deserialize(const json& serialized) {
+			auto n = make_ref<OutputVariable>();
+			n->inputs.clear();
+			n->outputs.clear();
+			for (const auto&[var, varType] : serialized["variableTypes"].items())
+				n->variableTypes.emplace(var, varType.get<std::string>());
+			return n;
+		}
 	};
 
+	ProceduralFunction() = default;
+	ProceduralFunction(const ProceduralFunction&) = default;
+	ProceduralFunction(ProceduralFunction&&) = default;
 	ProceduralFunction(const std::string& entryPoint, const NameMap<std::string>& outputs, const NameMap<NodeOutputConnection>& inputs = {});
+
+	ProceduralFunction& operator=(const ProceduralFunction&) = default;
+	ProceduralFunction& operator=(ProceduralFunction&&) = default;
 
 	inline OutputVariable& Root() { return *mOutputNode; }
 
@@ -70,8 +117,18 @@ public:
 
 	std::string Compile(const std::string& lineEnding = "\n");
 
-	std::string Serialize() const;
-	void Deserialize(const std::string& serialized);
+	inline json Serialize() const {
+		json dst = json::object();
+		dst["name"] = mEntryPoint;
+		dst["node"] = mOutputNode->Serialize();
+		return dst;
+	}
+	inline static ProceduralFunction Deserialize(const json& serialized) {
+		ProceduralFunction f = {};
+		f.mEntryPoint = serialized["name"].get<std::string>();
+		f.mOutputNode = std::dynamic_pointer_cast<OutputVariable>( ProceduralNode::DeserializeNode(serialized["node"]) );
+		return f;
+	}
 
 private:
 	// variable name -> type
@@ -87,7 +144,7 @@ private:
 		}
 	}
 
-	std::string mEntryPoint = "proc_main";
+	std::string mEntryPoint = "ProceduralFunction";
 	ref<OutputVariable> mOutputNode = {};
 };
 

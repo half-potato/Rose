@@ -7,12 +7,15 @@
 #include <bit>
 #include <concepts>
 #include <Core/RoseEngine.hpp>
+#include <Core/MathTypes.hpp>
 #include <Core/Hash.hpp>
+#include <json.hpp>
 
 namespace RoseEngine {
 
 // node output id -> compiled variable name
 using NodeOutputMap = NameMap<std::string>;
+using json = nlohmann::json;
 
 class ProceduralNode;
 
@@ -35,10 +38,12 @@ struct NodeOutputConnection {
 	NodeOutputConnection& operator=(const NodeOutputConnection&) = default;
 	NodeOutputConnection& operator=(NodeOutputConnection&&) = default;
 
+	inline NodeOutputConnection(nullptr_t node_, const std::string& outputName_ = gDefaultOutputName) : node(nullptr), outputName(outputName_) {}
 	template<std::derived_from<ProceduralNode> NodeType>
 	inline NodeOutputConnection(const ref<NodeType>& node_, const std::string& outputName_ = gDefaultOutputName) : node(node_), outputName(outputName_) {}
 	template<std::derived_from<ProceduralNode> NodeType>
 	inline NodeOutputConnection(ref<NodeType>&& node_, const std::string& outputName_ = gDefaultOutputName) : node(node_), outputName(outputName_) {}
+
 	template<std::derived_from<ProceduralNode> NodeType>
 	inline NodeOutputConnection& operator=(const ref<NodeType>& node_) {
 		node = node_;
@@ -58,6 +63,8 @@ protected:
 	friend struct ProceduralNodeCompiler;
 	NameMap<NodeOutputConnection> inputs = {};
 	std::vector<std::string> outputs = { NodeOutputConnection::gDefaultOutputName };
+	float2 pos = { 0, 0 };
+	bool hasPos = false;
 
 public:
 	inline const auto& GetInputs() const { return inputs; }
@@ -94,8 +101,9 @@ public:
 
 	virtual NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const = 0;
 
-	virtual std::string Serialize() const;
-	virtual void Deserialize(const std::string& serialized);
+	inline virtual const char* GetType() const { return "ProceduralNode"; }
+	virtual json Serialize() const;
+	static ref<ProceduralNode> DeserializeNode(const json& serialized);
 };
 
 inline std::pair<NodeOutputMap*, bool> ProceduralNodeCompiler::GetNodeOutputNames(const ProceduralNode* node) {

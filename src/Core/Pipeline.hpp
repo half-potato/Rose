@@ -94,6 +94,7 @@ public:
 	inline const vk::raii::Pipeline* operator->() const { return &mPipeline; }
 
 	inline const ref<const PipelineLayout>& Layout() const { return mLayout; }
+	inline const ref<const ShaderModule>& GetShader() const { return *mShaders.begin(); }
 	inline const ref<const ShaderModule>& GetShader(const vk::ShaderStageFlagBits stage) const {
 		return *std::ranges::find(mShaders, stage, &ShaderModule::Stage);
 	}

@@ -8,31 +8,41 @@ namespace RoseEngine {
 void TerrainRenderer::Initialize(CommandContext& context) {
 	cbt = ConcurrentBinaryTree::Create(context, 20, 6);
 
-	heightFunction = make_ref<ProceduralFunction>("GetHeight",
-		// outputs
-		NameMap<std::string>{ { "height", "float" } },
-		// inputs
-		NameMap<NodeOutputConnection>{ { "height",
-			make_ref<MathNode>(MathNode::MathOp::eAdd,
-				make_ref<MathNode>(MathNode::MathOp::eLength,
-					NodeOutputConnection{ make_ref<ProceduralFunction::InputVariable>("position", "float3"), "position" }),
-				make_ref<ExpressionNode>("1")) }
-	});
+	if (std::filesystem::exists("GetHeight.bson")) {
+		auto jsonData = ReadFile<std::vector<uint8_t>>("GetHeight.bson");
+		json serialized = json::from_bson(jsonData);
+		heightFunction = ProceduralFunction::Deserialize(serialized);
+	} else {
+		heightFunction = ProceduralFunction("GetHeight",
+			// outputs
+			NameMap<std::string>{ { "height", "float" } },
+			// inputs
+			NameMap<NodeOutputConnection>{ { "height",
+				make_ref<MathNode>(MathNode::MathOp::eAdd,
+					make_ref<MathNode>(MathNode::MathOp::eLength,
+						NodeOutputConnection{ make_ref<ProceduralFunction::InputVariable>("position", "float3"), "position" }),
+					make_ref<ExpressionNode>("1")) }
+		});
+	}
+}
+TerrainRenderer::~TerrainRenderer() {
+	WriteFile("GetHeight.bson", json::to_bson(heightFunction.Serialize()));
 }
 
 void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 	auto srcFile = FindShaderPath("Terrain.3d.slang");
 
-	size_t nodeHash = heightFunction->Root().hash();
-	if (nodeHash != nodeTreeHash)
-		compiledHeightFunction = heightFunction->Compile("");
+	size_t nodeHash = heightFunction.Root().hash();
+	if (nodeHash != nodeTreeHash) {
+		compiledHeightFunction = heightFunction.Compile("");
+	}
 
 	ShaderDefines defs {
 		{ "CBT_HEAP_BUFFER_COUNT", std::to_string(cbt->ArraySize()) },
 		{ "PROCEDURAL_NODE_SRC", compiledHeightFunction }
 	};
 
-	if (!subdividePipeline || subdividePipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->IsStale() || nodeHash != nodeTreeHash)
+	if (!subdividePipeline || subdividePipeline->GetShader()->IsStale() || nodeHash != nodeTreeHash)
 		subdividePipeline = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "Subdivide", "sm_6_7", defs));
 
 	ref<const ShaderModule> vertexShader, fragmentShader;
@@ -136,7 +146,7 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 
 	// subdivision
 	{
-		cbt->WriteIndirectDispatchArgs(context, dispatchArgs, subdividePipeline->GetShader(vk::ShaderStageFlagBits::eCompute)->WorkgroupSize().x);
+		cbt->WriteIndirectDispatchArgs(context, dispatchArgs, subdividePipeline->GetShader()->WorkgroupSize().x);
 		context.AddBarrier(dispatchArgs, Buffer::ResourceState{
 			.stage  = vk::PipelineStageFlagBits2::eDrawIndirect,
 			.access = vk::AccessFlagBits2::eIndirectCommandRead,
@@ -149,7 +159,6 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 		context->bindPipeline(vk::PipelineBindPoint::eCompute, ***subdividePipeline);
 		context.BindParameters(*subdividePipeline->Layout(), params);
 
-		params["cbtID"]  = split ? 1u : 0u;
 		for (uint32_t i = 0; i < cbt->ArraySize(); i++) {
 			context->pushConstants<uint32_t>(***subdividePipeline->Layout(), vk::ShaderStageFlagBits::eCompute, 0, i);
 			context->dispatchIndirect(**dispatchArgs.mBuffer, dispatchArgs.mOffset + i*sizeof(uint4));
@@ -183,7 +192,7 @@ void TerrainRenderer::Render(CommandContext& context) {
 }
 
 void TerrainRenderer::NodeGui() {
-	heightFunction->NodeGui();
+	heightFunction.NodeGui();
 }
 
 }
