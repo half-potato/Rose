@@ -13,10 +13,8 @@ void ExpressionNode::Gui(float width) {
 
 	{
 		auto& name = outputs[0];
-		ImNodes::BeginOutputAttribute((int)HashArgs(this, name, 1));
-
+		ImNodes::BeginOutputAttribute(GetAttributeId(this, name, false));
 		ImGui::InputText("Value", &value);
-
 		ImNodes::EndOutputAttribute();
 	}
 }
@@ -72,7 +70,7 @@ void MathNode::Gui(float width) {
 		bool inputRow = it != inputs.end() && i < argCount;
 		if (inputRow) {
 			auto&[name, c] = *it;
-			ImNodes::BeginInputAttribute((int)HashArgs(this, name));
+			ImNodes::BeginInputAttribute(GetAttributeId(this, name, true));
 			ImGui::TextUnformatted(name.c_str());
 			offset -= ImGui::GetItemRectSize().x;
 			ImNodes::EndInputAttribute();
@@ -86,7 +84,7 @@ void MathNode::Gui(float width) {
 			ImVec2 s = ImGui::CalcTextSize(name.c_str());
 			offset -= s.x;
 			ImGui::Dummy(ImVec2(offset, s.y));
-			ImNodes::BeginOutputAttribute((int)HashArgs(this, name, 1));
+			ImNodes::BeginOutputAttribute(GetAttributeId(this, name, false));
 			ImGui::SameLine();
 			ImGui::TextUnformatted(name.c_str());
 			ImNodes::EndOutputAttribute();

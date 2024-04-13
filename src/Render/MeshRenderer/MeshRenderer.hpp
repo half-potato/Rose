@@ -114,34 +114,40 @@ public:
 	inline void InspectorGui(CommandContext& context) override {
 		static Transform tmp = Transform::Identity();
 
-		if (ImGui::Button("Add instance")) {
-			ImGui::OpenPopup("Add instance");
-			tmp = Transform::Identity();
-		}
+		if (ImGui::CollapsingHeader("Meshes")) {
+			ImGui::Indent();
 
-		// add child dialog
-		if (ImGui::BeginPopup("Add instance")) {
-			RoseEngine::InspectorGui(tmp);
-			if (ImGui::Button("Done")) {
-				objectTransforms.emplace_back(tmp);
-				objectTransformsDirty = true;
-				ImGui::CloseCurrentPopup();
+			if (ImGui::Button("Add instance")) {
+				ImGui::OpenPopup("Add instance");
+				tmp = Transform::Identity();
 			}
-			ImGui::EndPopup();
-		}
 
-		for (auto it = objectTransforms.begin(); it != objectTransforms.end();) {
-			ImGui::PushID(&*it);
-			if (ImGui::CollapsingHeader("Mesh")) {
-				if (ImGui::Button("Delete")) {
-					it = objectTransforms.erase(it);
-					ImGui::PopID();
-					continue;
+			// add child dialog
+			if (ImGui::BeginPopup("Add instance")) {
+				RoseEngine::InspectorGui(tmp);
+				if (ImGui::Button("Done")) {
+					objectTransforms.emplace_back(tmp);
+					objectTransformsDirty = true;
+					ImGui::CloseCurrentPopup();
 				}
-				objectTransformsDirty |= RoseEngine::InspectorGui(*it);
+				ImGui::EndPopup();
 			}
-			ImGui::PopID();
-			it++;
+
+			for (auto it = objectTransforms.begin(); it != objectTransforms.end();) {
+				ImGui::PushID(&*it);
+				if (ImGui::CollapsingHeader("Mesh")) {
+					if (ImGui::Button("Delete")) {
+						it = objectTransforms.erase(it);
+						ImGui::PopID();
+						continue;
+					}
+					objectTransformsDirty |= RoseEngine::InspectorGui(*it);
+				}
+				ImGui::PopID();
+				it++;
+			}
+
+			ImGui::Unindent();
 		}
 	}
 

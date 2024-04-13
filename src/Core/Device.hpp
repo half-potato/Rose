@@ -58,6 +58,7 @@ public:
 	inline const vk::raii::PipelineCache&         PipelineCache() const { return mPipelineCache; }
 	inline const vk::PhysicalDeviceLimits&        Limits() const { return mLimits; }
 	inline const std::unordered_set<std::string>& EnabledExtensions() const { return mExtensions; }
+	inline bool                                   DebugUtilsEnabled() const { return mUseDebugUtils; }
 
 	inline uint32_t FindQueueFamily(const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
 		uint32_t min_i = -1;

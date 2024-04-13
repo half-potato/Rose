@@ -13,17 +13,7 @@ struct GBuffer {
 	ImageView depth;
 };
 
-class IRenderer {
-public:
-	virtual void Initialize(CommandContext& context) {}
-	virtual void InspectorGui(CommandContext& context) {}
-	virtual void PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) {}
-	virtual void Render(CommandContext& context) = 0;
-	virtual void PostRender(CommandContext& context, const GBuffer& gbuffer) {}
-};
-
-class ViewportWidget {
-private:
+struct EditorCamera {
 	float3 cameraPos   = float3(0, 2, 2);
 	float2 cameraAngle = float2(-float(M_PI)/4,0);
 	float  fovY  = 50.f; // in degrees
@@ -31,37 +21,16 @@ private:
 
 	float moveSpeed = 1.f;
 
-	std::vector<ref<IRenderer>> renderers = {};
-
-	TransientResourceCache<GBuffer> cachedGbuffers = {};
-	uint2 cachedGbufferExtent = uint2(0,0);
-
-public:
-	inline ViewportWidget(CommandContext& context, const std::vector<ref<IRenderer>>& renderers_) : renderers(renderers_) {
-		context.Begin();
-		for (const auto& r : renderers)
-			r->Initialize(context);
-		context.Submit();
+	inline void InspectorGui() {
+		ImGui::PushID("Camera");
+		ImGui::DragFloat3("Position", &cameraPos.x);
+		ImGui::DragFloat2("Angle", &cameraAngle.x);
+		Gui::ScalarField("Vertical field of view", &fovY);
+		Gui::ScalarField("Near Z", &nearZ);
+		ImGui::PopID();
 	}
 
-	inline void InspectorGui(CommandContext& context) {
-		if (ImGui::CollapsingHeader("Camera")) {
-			ImGui::PushID("Camera");
-			ImGui::DragFloat3("Position", &cameraPos.x);
-			ImGui::DragFloat2("Angle", &cameraAngle.x);
-			Gui::ScalarField("Vertical field of view", &fovY);
-			Gui::ScalarField("Near Z", &nearZ);
-			ImGui::PopID();
-		}
-
-		for (const auto& r : renderers)
-			r->InspectorGui(context);
-	}
-
-	inline void Render(CommandContext& context, double dt) {
-		const float2 extentf = std::bit_cast<float2>(ImGui::GetWindowContentRegionMax()) - std::bit_cast<float2>(ImGui::GetWindowContentRegionMin());
-		const uint2 extent = uint2(extentf);
-
+	inline void Update(double dt) {
 		if (ImGui::IsWindowHovered()) {
 			if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
 				cameraAngle += float2(-ImGui::GetIO().MouseDelta.y, ImGui::GetIO().MouseDelta.x) * float(M_PI) / 1920.f;
@@ -78,12 +47,12 @@ public:
 			}
 
 			float3 move = float3(0,0,0);
-			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_W)) move += float3(0,0,-1);
-			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_S)) move += float3(0,0, 1);
-			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_D)) move += float3( 1,0,0);
-			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_A)) move += float3(-1,0,0);
-			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_Q)) move += float3(0,-1,0);
-			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_E)) move += float3(0, 1,0);
+			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_W)) move += float3( 0, 0,-1);
+			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_S)) move += float3( 0, 0, 1);
+			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_D)) move += float3( 1, 0, 0);
+			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_A)) move += float3(-1, 0, 0);
+			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_Q)) move += float3( 0,-1, 0);
+			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_E)) move += float3( 0, 1, 0);
 			if (move != float3(0,0,0)) {
 				move = (ry * rx) * normalize(move);
 				if (ImGui::IsKeyDown(ImGuiKey_LeftShift))
@@ -91,6 +60,56 @@ public:
 				cameraPos += move * moveSpeed * float(dt);
 			}
 		}
+	}
+
+	inline std::pair<Transform,Transform> GetViewProjection(float aspect) const {
+		const quat      rot = glm::angleAxis(-cameraAngle.y, float3(0,1,0)) * glm::angleAxis( cameraAngle.x, float3(1,0,0));
+		const Transform view = inverse( Transform::Rotate(rot) * Transform::Translate(cameraPos) );
+		const Transform projection = Transform::Perspective(glm::radians(fovY), aspect, nearZ);
+		return { view, projection };
+	}
+};
+
+class IRenderer {
+public:
+	virtual void Initialize(CommandContext& context) {}
+	virtual void InspectorGui(CommandContext& context) {}
+	virtual void PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) {}
+	virtual void Render(CommandContext& context) = 0;
+	virtual void PostRender(CommandContext& context, const GBuffer& gbuffer) {}
+};
+
+class ViewportWidget {
+private:
+	EditorCamera camera = {};
+	std::vector<ref<IRenderer>> renderers = {};
+
+	TransientResourceCache<GBuffer> cachedGbuffers = {};
+	uint2 cachedGbufferExtent = uint2(0,0);
+
+public:
+	inline ViewportWidget(CommandContext& context, const std::vector<ref<IRenderer>>& renderers_) : renderers(renderers_) {
+		context.Begin();
+		for (const auto& r : renderers)
+			r->Initialize(context);
+		context.Submit();
+		camera = {};
+	}
+
+	inline void InspectorGui(CommandContext& context) {
+		if (ImGui::CollapsingHeader("Camera")) {
+			camera.InspectorGui();
+		}
+
+		for (const auto& r : renderers)
+			r->InspectorGui(context);
+	}
+
+	inline void Render(CommandContext& context, double dt) {
+		const float2 extentf = std::bit_cast<float2>(ImGui::GetWindowContentRegionMax()) - std::bit_cast<float2>(ImGui::GetWindowContentRegionMin());
+		const uint2 extent = uint2(extentf);
+
+		camera.Update(dt);
 
 		if (cachedGbufferExtent != extent) {
 			context.GetDevice().Wait();
@@ -148,9 +167,7 @@ public:
 		ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y);
 		ImGuizmo::SetID(0);
 
-		const quat      rot = glm::angleAxis(-cameraAngle.y, float3(0,1,0)) * glm::angleAxis( cameraAngle.x, float3(1,0,0));
-		const Transform view = inverse( Transform::Rotate(rot) * Transform::Translate(cameraPos) );
-		const Transform projection = Transform::Perspective(glm::radians(fovY), extentf.x / extentf.y, nearZ);
+		const auto [view,projection] = camera.GetViewProjection(extentf.x / extentf.y);
 
 		for (const auto& r : renderers)
 			r->PreRender(context, gbuffer, view, projection);

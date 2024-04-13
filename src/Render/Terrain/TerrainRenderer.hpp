@@ -4,13 +4,17 @@
 #include <Render/Procedural/ProceduralFunction.hpp>
 #include "ConcurrentBinaryTree.hpp"
 
+#include <future>
+
 namespace RoseEngine {
 
 class TerrainRenderer : public IRenderer {
 private:
-	ref<Pipeline> subdividePipeline;
-	ref<Pipeline> drawPipeline;
+	ref<Pipeline> subdividePipeline = {};
+	ref<Pipeline> drawPipeline = {};
 	vk::Format    pipelineFormat = vk::Format::eUndefined;
+
+	std::future<ref<Pipeline>> futureDrawPipeline = {};
 
 	float targetTriangleSize = 10;
 	float3 lightDir = float3(0,1,0);
@@ -36,7 +40,7 @@ public:
 	void PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) override;
 	void Render(CommandContext& context) override;
 	void InspectorGui(CommandContext& context) override;
-	void NodeGui();
+	void NodeEditorGui();
 };
 
 }

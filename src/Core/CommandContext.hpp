@@ -136,6 +136,9 @@ public:
 	void PushConstants  (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) const;
 	void BindParameters (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter);
 
+	void PushDebugLabel(const std::string& name, const float4 color = float4(1,1,1,1));
+	void PopDebugLabel();
+
 	#pragma region Barriers
 
 	inline static const vk::AccessFlags2 gWriteAccesses =

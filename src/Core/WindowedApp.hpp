@@ -7,6 +7,7 @@
 
 namespace RoseEngine {
 
+// Stores Widgets which have a callback that is called every frame.
 struct WindowedApp {
 	ref<Instance>  instance  = nullptr;
 	ref<Device>    device    = nullptr;
@@ -19,7 +20,7 @@ struct WindowedApp {
 	uint32_t presentQueueFamily = 0;
 
 	struct Widget {
-		std::function<void()> drawFn;
+		std::function<void()> draw;
 		bool visible = true;
 		ImGuiWindowFlags flags = (ImGuiWindowFlags)0;
 	};
@@ -178,11 +179,12 @@ struct WindowedApp {
 	}
 
 	inline void Update() {
-		// Menu bar
+		// window dockspace
 		ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
 		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize), ImGuiCond_Always;
 		ImGui::Begin("Main Dockspace", nullptr, ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoBringToFrontOnFocus|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_MenuBar);
 
+		// Menu bar
 		if (ImGui::BeginMenuBar()) {
 			if (ImGui::BeginMenu("File")) {
 				if (ImGui::MenuItem("Open")) {
@@ -214,12 +216,12 @@ struct WindowedApp {
 
 		ImGui::End();
 
-		// Widget windows
+		// Widgets
 
 		for (auto&[name, widget] : widgets) {
 			if (widget.visible) {
 				if (ImGui::Begin(name.c_str(), &widget.visible, widget.flags))
-					widget.drawFn();
+					widget.draw();
 				ImGui::End();
 			}
 		}

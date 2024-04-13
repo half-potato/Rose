@@ -113,7 +113,7 @@ public:
 
 	inline OutputVariable& Root() { return *mOutputNode; }
 
-	void NodeGui();
+	void NodeEditorGui();
 
 	std::string Compile(const std::string& lineEnding = "\n");
 
@@ -146,6 +146,7 @@ private:
 
 	std::string mEntryPoint = "ProceduralFunction";
 	ref<OutputVariable> mOutputNode = {};
+	std::vector<ref<ProceduralNode>> mDisconnectedNodes = {};
 };
 
 };

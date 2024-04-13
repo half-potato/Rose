@@ -58,7 +58,7 @@ struct NodeOutputConnection {
 	}
 };
 
-class ProceduralNode {
+class ProceduralNode : public std::enable_shared_from_this<ProceduralNode> {
 protected:
 	friend struct ProceduralNodeCompiler;
 	NameMap<NodeOutputConnection> inputs = {};
@@ -82,6 +82,8 @@ public:
 		}
 		inputs.at(name) = NodeOutputConnection(node, outputName);
 	}
+
+	inline void SetPosition(const float2 p) { pos = p; hasPos = true; }
 
 	inline virtual size_t hash() const {
 		size_t h = 0;
@@ -123,6 +125,11 @@ inline std::pair<NodeOutputMap*, bool> ProceduralNodeCompiler::GetNodeOutputName
 
 	return std::make_pair(&nodeMap.emplace(node, vars).first->second, false);
 }
+
+int GetNodeId(const ProceduralNode* n);
+int GetAttributeId(const ProceduralNode* node, const std::string& attrib, bool input);
+ProceduralNode* GetNode(int id);
+std::tuple<ProceduralNode*, std::string, bool> GetAttribute(int id);
 
 }
 

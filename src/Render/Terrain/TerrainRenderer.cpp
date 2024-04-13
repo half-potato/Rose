@@ -89,36 +89,52 @@ void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 		.dynamicRenderingState = DynamicRenderingState{
 			.colorFormats = { format, vk::Format::eR32G32B32A32Uint },
 			.depthFormat = { vk::Format::eD32Sfloat } } };
-	drawPipeline = Pipeline::CreateGraphics(device, vertexShader, fragmentShader, pipelineInfo);
+
+	auto p = Pipeline::CreateGraphics(device, vertexShader, fragmentShader, pipelineInfo);
 
 	pipelineFormat = format;
 	nodeTreeHash = nodeHash;
+	drawPipeline = p;
 }
 
 void TerrainRenderer::InspectorGui(CommandContext& context) {
-	if (ImGui::CollapsingHeader("Concurrent binary tree")) {
-		uint32_t depth = cbt->MaxDepth();
-		bool square = cbt->Square();
-		bool changed = false;
-		changed |= Gui::ScalarField("Depth", &depth);
-		changed |= ImGui::Checkbox("Square", &square);
-		if (changed && depth > 5 && depth < 38) {
-			context.GetDevice().Wait();
-			cbt = ConcurrentBinaryTree::Create(context, depth, 6, square);
+	if (ImGui::CollapsingHeader("Terrain")) {
+		ImGui::Indent();
+
+		if (ImGui::CollapsingHeader("Concurrent binary tree")) {
+			uint32_t depth = cbt->MaxDepth();
+			bool square = cbt->Square();
+			bool changed = false;
+			changed |= Gui::ScalarField("Depth", &depth);
+			changed |= ImGui::Checkbox("Square", &square);
+			if (changed && depth > 5 && depth < 38) {
+				context.GetDevice().Wait();
+				cbt = ConcurrentBinaryTree::Create(context, depth, 6, square);
+			}
+
+			auto[size,unit] = FormatBytes(cbt->GetBuffer(0).size());
+			ImGui::LabelText("Size: ", "%llu %s", size, unit);
 		}
 
-		auto[size,unit] = FormatBytes(cbt->GetBuffer(0).size());
-		ImGui::LabelText("Size: ", "%llu %s", size, unit);
-	}
+		if (ImGui::CollapsingHeader("Rendering")) {
+			Gui::ScalarField("Target triangle size", &targetTriangleSize, 1.f, 2000.f, .1f);
+			if (ImGui::Checkbox("Wire", &wire))
+				pipelineFormat = vk::Format::eUndefined;
 
-	if (ImGui::CollapsingHeader("Rendering")) {
-		Gui::ScalarField("Target triangle size", &targetTriangleSize, 1.f, 2000.f, .1f);
-		if (ImGui::Checkbox("Wire", &wire))
-			pipelineFormat = vk::Format::eUndefined;
+			if (ImGui::DragFloat3("Light dir", &lightDir.x, 0.025f))
+				lightDir = normalize(lightDir);
+		}
 
-		if (ImGui::DragFloat3("Light dir", &lightDir.x, 0.025f))
-			lightDir = normalize(lightDir);
+		if (ImGui::CollapsingHeader("Height function")) {
+			ImGui::TextUnformatted(compiledHeightFunction.c_str());
+		}
+
+		ImGui::Unindent();
 	}
+}
+
+void TerrainRenderer::NodeEditorGui() {
+	heightFunction.NodeEditorGui();
 }
 
 void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) {
@@ -126,6 +142,11 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 		|| gbuffer.renderTarget.GetImage()->Info().format != pipelineFormat
 		|| ImGui::IsKeyPressed(ImGuiKey_F5, false))
 		CreatePipelines(context.GetDevice(), gbuffer.renderTarget.GetImage()->Info().format);
+
+	if (!drawPipeline) {
+		ImGui::OpenPopup("Compiling shaders");
+		return;
+	}
 
 	auto indirectArgs = cachedIndirectArgs.pop_or_create(context.GetDevice(), [&]() {
 		auto buf1 = Buffer::Create(context.GetDevice(), sizeof(uint4) * cbt->ArraySize(), vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer);
@@ -183,16 +204,17 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 }
 
 void TerrainRenderer::Render(CommandContext& context) {
+	if (!drawPipeline) {
+		ImGui::OpenPopup("Compiling shaders");
+		return;
+	}
+
 	context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***drawPipeline);
 	context.BindDescriptors(*drawPipeline->Layout(), *descriptorSets);
 	for (uint32_t i = 0; i < cbt->ArraySize(); i++) {
 		context->pushConstants<uint32_t>(***drawPipeline->Layout(), vk::ShaderStageFlagBits::eVertex|vk::ShaderStageFlagBits::eFragment, 0, i);
 		context->drawIndirect(**drawIndirectArgs.mBuffer, drawIndirectArgs.mOffset + i*sizeof(uint4), 1, sizeof(uint4));
 	}
-}
-
-void TerrainRenderer::NodeGui() {
-	heightFunction.NodeGui();
 }
 
 }

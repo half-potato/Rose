@@ -25,7 +25,7 @@ int main(int argc, const char** argv) {
 	}, true);
 
 	app.AddWidget("Terrain nodes", [&]() {
-		terrain->NodeGui();
+		terrain->NodeEditorGui();
 	}, true);
 
 	app.Run();
