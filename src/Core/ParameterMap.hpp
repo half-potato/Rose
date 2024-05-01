@@ -51,13 +51,13 @@ public:
 		inline value_type operator*() const { return value_type{ it->first, std::reference_wrapper<ParameterMap>(*it->second) }; }
 	};
 	/*/
-	using iterator = map_type::iterator; 
-	using const_iterator = map_type::const_iterator; 
+	using iterator = map_type::iterator;
+	using const_iterator = map_type::const_iterator;
 	//*/
 	inline       iterator begin() { return mParameters.begin(); }
 	inline       iterator end()   { return mParameters.end(); }
-	inline const_iterator begin() const { return mParameters.cbegin(); }
-	inline const_iterator end()   const { return mParameters.cend(); }
+	inline const_iterator begin() const { return mParameters.begin(); }
+	inline const_iterator end()   const { return mParameters.end(); }
 
 	inline iterator find(size_t i) { return mParameters.find(std::to_string(i)); }
 	inline iterator find(const std::string& i) { return mParameters.find(i); }
@@ -72,6 +72,8 @@ public:
 	inline const ParameterMap& at(const std::string& i) const { return mParameters.at(i); }
 	inline const ParameterMap& at(size_t i) const { return mParameters.at(std::to_string(i)); }
 
+	inline const std::variant<Types...>& raw_variant() const { return mValue; }
+
 	template<one_of<Types...> T> inline bool holds_alternative() const { return std::holds_alternative<T>(mValue); }
 
 	template<one_of<Types...> T> inline T& get() { return std::get<T>(mValue); }
@@ -80,13 +82,7 @@ public:
 	template<one_of<Types...> T> inline T* get_if() { return std::get_if<T>(&mValue); }
 	template<one_of<Types...> T> inline const T* get_if() const { return std::get_if<T>(&mValue); }
 
-	template<one_of<Types...> T>
-	inline ParameterMap& operator=(T&& rhs) {
-		mValue = rhs;
-		return *this;
-	}
-	template<one_of<Types...> T>
-	inline ParameterMap& operator=(const T& rhs) {
+	inline ParameterMap& operator=(const std::variant<Types...>& rhs) {
 		mValue = rhs;
 		return *this;
 	}

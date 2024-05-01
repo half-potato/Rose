@@ -112,16 +112,21 @@ void CommandContext::AllocateDescriptorPool() {
 		.setPoolSizes(poolSizes)));
 }
 
-DescriptorSets CommandContext::AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts) {
+DescriptorSets CommandContext::AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts, const vk::ArrayProxy<const uint32_t>& variableSetCounts) {
 	if (mCachedDescriptorPools.empty())
 		AllocateDescriptorPool();
 
+	vk::DescriptorSetVariableDescriptorCountAllocateInfo descriptorCounts {
+		.descriptorSetCount = (uint32_t)variableSetCounts.size(),
+		.pDescriptorCounts = variableSetCounts.data()
+	};
+
 	std::vector<vk::raii::DescriptorSet> sets;
 	try {
-		sets = (*mDevice)->allocateDescriptorSets(vk::DescriptorSetAllocateInfo{ .descriptorPool = *mCachedDescriptorPools.front() }.setSetLayouts(layouts));
+		sets = (*mDevice)->allocateDescriptorSets(vk::DescriptorSetAllocateInfo{ .pNext = variableSetCounts.empty() ? nullptr : &descriptorCounts, .descriptorPool = *mCachedDescriptorPools.front() }.setSetLayouts(layouts));
 	} catch(vk::OutOfPoolMemoryError e) {
 		AllocateDescriptorPool();
-		sets = (*mDevice)->allocateDescriptorSets(vk::DescriptorSetAllocateInfo{ .descriptorPool = *mCachedDescriptorPools.front() }.setSetLayouts(layouts));
+		sets = (*mDevice)->allocateDescriptorSets(vk::DescriptorSetAllocateInfo{ .pNext = variableSetCounts.empty() ? nullptr : &descriptorCounts, .descriptorPool = *mCachedDescriptorPools.front() }.setSetLayouts(layouts));
 	}
 
 	return sets;
@@ -220,6 +225,7 @@ struct DescriptorSetWriter {
 
 			} else if (const auto* v = param.get_if<ConstantParameter>()) {
 				if (const auto* constantBinding = paramBinding.get_if<ShaderConstantBinding>()) {
+					// binding a constant to a variable inside a uniform buffer/push constant
 					if (v->size() > constantBinding->typeSize)
 						std::cout << "Warning: Binding constant parameter of size " << v->size() << " to binding of size " << constantBinding->typeSize << std::endl;
 
@@ -234,10 +240,13 @@ struct DescriptorSetWriter {
 						std::memcpy(u.data() + offset, v->data(), v->size());
 					}
 				} else if (const auto* descriptorBinding = paramBinding.get_if<ShaderDescriptorBinding>()) {
+					// binding a constant to a uniform/storage buffer
 					if (descriptorBinding->descriptorType == vk::DescriptorType::eUniformBuffer || descriptorBinding->descriptorType == vk::DescriptorType::eStorageBuffer) {
-
 						auto buffer = context.UploadData(*v, descriptorBinding->descriptorType == vk::DescriptorType::eUniformBuffer ? vk::BufferUsageFlagBits::eUniformBuffer : vk::BufferUsageFlagBits::eStorageBuffer);
-
+						context.AddBarrier(buffer, Buffer::ResourceState{
+							.stage  = stage,
+							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+							.queueFamily = context.QueueFamily() });
 						WriteBuffer(*descriptorBinding, arrayIndex, vk::DescriptorBufferInfo{
 							.buffer = **buffer.mBuffer,
 							.offset = buffer.mOffset,
@@ -253,7 +262,7 @@ struct DescriptorSetWriter {
 						if (buffer.empty()) continue;
 						context.AddBarrier(*v, Buffer::ResourceState{
 							.stage  = stage,
-							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead,
+							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
 							.queueFamily = context.QueueFamily() });
 						WriteBuffer(*descriptorBinding, arrayIndex, vk::DescriptorBufferInfo{
 							.buffer = **buffer.mBuffer,
@@ -265,7 +274,7 @@ struct DescriptorSetWriter {
 						context.AddBarrier(image, Image::ResourceState{
 							.layout = layout,
 							.stage  = stage,
-							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead,
+							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
 							.queueFamily = context.QueueFamily() });
 						WriteImage(*descriptorBinding, arrayIndex, vk::DescriptorImageInfo{
 							.sampler     = sampler ? **sampler : nullptr,
@@ -287,7 +296,9 @@ struct DescriptorSetWriter {
 };
 
 size_t GetDescriptorCount(const ShaderParameterBinding& param) {
-	size_t count = param.holds_alternative<ShaderDescriptorBinding>() ? 1 : 0;
+	size_t count = 0;
+	if (const auto* b = param.get_if<ShaderDescriptorBinding>())
+		count = b->arraySize;
 	if (const auto* b = param.get_if<ShaderConstantBinding>())
 		if (!b->pushConstant)
 			count = 1;
@@ -301,6 +312,7 @@ void CommandContext::UpdateDescriptorSets(const DescriptorSets& descriptorSets, 
 		return;
 
 	DescriptorSetWriter w = {};
+	w.stage = pipelineLayout.PipelineStageMask();
 	for (const auto& s : descriptorSets)
 		w.descriptorSets.emplace_back(*s);
 	w.descriptorInfos.reserve(GetDescriptorCount(pipelineLayout.RootBinding()));
@@ -311,7 +323,12 @@ void CommandContext::UpdateDescriptorSets(const DescriptorSets& descriptorSets, 
 	for (const auto&[setBinding, data] : w.uniforms) {
 		const auto [setIndex,bindingIndex] = setBinding;
 
-		auto buffer = UploadData(data);
+		auto buffer = UploadData(data, vk::BufferUsageFlagBits::eUniformBuffer);
+
+		AddBarrier(buffer, Buffer::ResourceState{
+			.stage  = w.stage,
+			.access = vk::AccessFlagBits2::eUniformRead,
+			.queueFamily = QueueFamily() });
 
 		w.WriteBuffer(
 			ShaderDescriptorBinding{
@@ -355,7 +372,7 @@ void PushConstants(const CommandContext& context, const PipelineLayout& pipeline
 				offset += constantBinding->offset;
 
 				if (constantBinding->pushConstant)
-					context->pushConstants<std::byte>(**pipelineLayout, pipelineLayout.StageMask(), offset, *v);
+					context->pushConstants<std::byte>(**pipelineLayout, pipelineLayout.ShaderStageMask(), offset, *v);
 			}
 		}
 
@@ -372,7 +389,7 @@ void CommandContext::BindDescriptors(const PipelineLayout& pipelineLayout, const
 	std::vector<vk::DescriptorSet> vkDescriptorSets;
 	for (const auto& ds : descriptorSets)
 		vkDescriptorSets.emplace_back(*ds);
-	mCommandBuffer.bindDescriptorSets(pipelineLayout.StageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
+	mCommandBuffer.bindDescriptorSets(pipelineLayout.ShaderStageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
 }
 
 void CommandContext::BindParameters(const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) {
@@ -382,7 +399,7 @@ void CommandContext::BindParameters(const PipelineLayout& pipelineLayout, const 
 	std::vector<vk::DescriptorSet> vkDescriptorSets;
 	for (const auto& ds : *descriptorSets)
 		vkDescriptorSets.emplace_back(*ds);
-	mCommandBuffer.bindDescriptorSets(pipelineLayout.StageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
+	mCommandBuffer.bindDescriptorSets(pipelineLayout.ShaderStageMask() & vk::ShaderStageFlagBits::eCompute ? vk::PipelineBindPoint::eCompute : vk::PipelineBindPoint::eGraphics, **pipelineLayout, 0, vkDescriptorSets, {});
 
 	PushConstants(pipelineLayout, rootParameter);
 }

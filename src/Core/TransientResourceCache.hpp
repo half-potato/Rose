@@ -7,7 +7,7 @@ namespace RoseEngine {
 
 template<typename T>
 struct TransientResourceCache  {
-	std::queue<std::pair<T, uint64_t>> mResources;
+	std::queue<std::pair<T, uint64_t>> mResources = {};
 
 	inline void clear() {
 		while (!mResources.empty())

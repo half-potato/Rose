@@ -1,10 +1,10 @@
 #include "ConcurrentBinaryTree.hpp"
 
 #define CBT_IMPLEMENTATION
-#include "cbt/cbt.h"
+#include "cbt.h"
 
 #define LEB_IMPLEMENTATION
-#include "cbt/leb.h"
+#include "leb.h"
 
 #include <imgui/imgui.h>
 #include <ImGuizmo.h>

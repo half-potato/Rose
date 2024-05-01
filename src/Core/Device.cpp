@@ -8,7 +8,7 @@
 
 namespace RoseEngine {
 
-void ConfigureFeatures(Device& device, auto& features, auto& createInfo) {
+void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, auto& createInfo) {
 	features.fillModeNonSolid = true;
 	features.samplerAnisotropy = true;
 	features.shaderImageGatherExtended = true;
@@ -26,8 +26,6 @@ void ConfigureFeatures(Device& device, auto& features, auto& createInfo) {
 	vk12features.shaderSampledImageArrayNonUniformIndexing = true;
 	vk12features.shaderStorageImageArrayNonUniformIndexing = true;
 	vk12features.descriptorBindingPartiallyBound = true;
-	vk12features.shaderInt8 = true;
-	vk12features.storageBuffer8BitAccess = true;
 	vk12features.shaderFloat16 = true;
 	vk12features.bufferDeviceAddress = device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 	vk12features.timelineSemaphore = true;
@@ -35,6 +33,9 @@ void ConfigureFeatures(Device& device, auto& features, auto& createInfo) {
 	vk::PhysicalDeviceVulkan13Features& vk13features = std::get<vk::PhysicalDeviceVulkan13Features>(createInfo);
 	vk13features.dynamicRendering = true;
 	vk13features.synchronization2 = true;
+
+	vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT& atomicFloatFeatures = std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(createInfo);
+	atomicFloatFeatures.shaderBufferFloat32AtomicAdd = device.EnabledExtensions().contains(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
 
 	vk::PhysicalDevice16BitStorageFeatures& storageFeatures = std::get<vk::PhysicalDevice16BitStorageFeatures>(createInfo);
 	storageFeatures.storageBuffer16BitAccess = true;

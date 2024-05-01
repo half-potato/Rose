@@ -28,6 +28,7 @@ private:
 		vk::PhysicalDeviceVulkan12Features,
 		vk::PhysicalDeviceVulkan13Features,
 		vk::PhysicalDevice16BitStorageFeatures,
+		vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT,
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
 		vk::PhysicalDeviceRayQueryFeaturesKHR
@@ -59,6 +60,7 @@ public:
 	inline const vk::PhysicalDeviceLimits&        Limits() const { return mLimits; }
 	inline const std::unordered_set<std::string>& EnabledExtensions() const { return mExtensions; }
 	inline bool                                   DebugUtilsEnabled() const { return mUseDebugUtils; }
+	inline const auto&                            CreateInfo() const { return mCreateInfo; }
 
 	inline uint32_t FindQueueFamily(const vk::QueueFlags flags = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer) {
 		uint32_t min_i = -1;

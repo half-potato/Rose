@@ -5,8 +5,6 @@ project(RoseEngine)
 # Find dependencies
 
 find_package(Vulkan REQUIRED)
-find_package(assimp CONFIG)
-find_package(OpenVDB CONFIG)
 
 # download slang release rom github if it doesnt already exist
 set(SLANG_ROOT "${CMAKE_CURRENT_LIST_DIR}/thirdparty/slang")
@@ -79,6 +77,7 @@ elseif(WIN32)
 	configure_file("${SLANG_ROOT}/bin/windows-x64/release/slang.dll" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang.dll" COPYONLY)
 endif()
 
+find_package(assimp CONFIG)
 if (assimp_FOUND)
 	if (WIN32)
 		target_link_libraries(RoseLib assimp::assimp)
@@ -89,9 +88,10 @@ if (assimp_FOUND)
     message(STATUS "Assimp enabled")
 endif()
 
+find_package(OpenVDB CONFIG)
 if (OpenVDB_FOUND)
     target_link_libraries(RoseLib OpenVDB::openvdb)
-    target_compile_definitions(RoseLib ENABLE_OPENVDB)
+    target_compile_definitions(RoseLib PRIVATE ENABLE_OPENVDB)
     message(STATUS "OpenVDB enabled")
 endif()
 

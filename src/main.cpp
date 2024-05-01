@@ -1,5 +1,6 @@
 #include <Core/WindowedApp.hpp>
-#include <Render/MeshRenderer/MeshRenderer.hpp>
+#include <Render/Scene/SceneRenderer.hpp>
+#include <Render/Scene/SceneEditor.hpp>
 #include <Render/Terrain/TerrainRenderer.hpp>
 
 #include <ImGuizmo.h>
@@ -9,24 +10,27 @@ using namespace RoseEngine;
 int main(int argc, const char** argv) {
 	WindowedApp app(std::span { argv, (size_t)argc });
 
-	auto terrain = make_ref<TerrainRenderer>();
+	auto terrain       = make_ref<TerrainRenderer>();
+	auto sceneRenderer = make_ref<SceneRenderer>();
+	auto sceneEditor   = make_ref<SceneEditor>(sceneRenderer);
 
-	ViewportWidget widget(*app.contexts[0], {
+	ViewportWidget viewport(*app.contexts[0], {
 		terrain,
-		make_ref<ObjectRenderer>(),
+		sceneRenderer,
+		sceneEditor
 	});
 
-	app.AddWidget("Renderer", [&]() {
-		widget.InspectorGui(*app.contexts[app.swapchain->ImageIndex()]);
-	}, true);
+	app.AddWidget("Renderers", [&]() { viewport.InspectorGui(*app.contexts[app.swapchain->ImageIndex()]); }, true);
+	app.AddWidget("Viewport", [&]() { viewport.Render(*app.contexts[app.swapchain->ImageIndex()], app.dt); }, true);
+	app.AddWidget("Terrain nodes", [&]() { terrain->NodeEditorWidget(); }, true);
+	app.AddWidget("Scene graph", [&]() { sceneEditor->SceneGraphWidget(); }, true);
+	app.AddWidget("Tools", [&]() { sceneEditor->ToolsWidget(); }, true);
 
-	app.AddWidget("Viewport", [&]() {
-		widget.Render(*app.contexts[app.swapchain->ImageIndex()], app.dt);
-	}, true);
-
-	app.AddWidget("Terrain nodes", [&]() {
-		terrain->NodeEditorGui();
-	}, true);
+	app.AddMenuItem("File", [&]() {
+		if (ImGui::MenuItem("Open scene")) {
+			sceneEditor->LoadScene(*app.contexts[app.swapchain->ImageIndex()]);
+		}
+	});
 
 	app.Run();
 

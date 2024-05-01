@@ -77,7 +77,8 @@ public:
 		const std::string& entryPoint = "main",
 		const std::string& profile = "sm_6_7",
 		const ShaderDefines& defines = {},
-		const std::vector<std::string>& compileArgs = {});
+		const std::vector<std::string>& compileArgs = {},
+		const bool allowRetry = true);
 
 	inline       vk::raii::ShaderModule& operator*()        { return mModule; }
 	inline const vk::raii::ShaderModule& operator*() const  { return mModule; }

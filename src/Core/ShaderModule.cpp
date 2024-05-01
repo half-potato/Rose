@@ -203,7 +203,8 @@ ref<ShaderModule> ShaderModule::Create(
 	const std::string& entryPoint,
 	const std::string& profile,
 	const ShaderDefines& defines,
-	const std::vector<std::string>& compileArgs) {
+	const std::vector<std::string>& compileArgs,
+	const bool allowRetry) {
 
 	if (!std::filesystem::exists(sourceFile))
 		throw std::runtime_error(sourceFile.string() + " does not exist");
@@ -240,7 +241,7 @@ ref<ShaderModule> ShaderModule::Create(
 		entryPointIndex = request->addEntryPoint(translationUnitIndex, entryPoint.c_str(), SLANG_STAGE_NONE);
 		request->setTargetProfile(targetIndex, session->findProfile(profile.c_str()));
 		//request->setTargetFloatingPointMode(targetIndex, SLANG_FLOATING_POINT_MODE_FAST);
-		//request->setTargetMatrixLayoutMode(targetIndex, SLANG_MATRIX_LAYOUT_COLUMN_MAJOR);
+		request->setTargetMatrixLayoutMode(targetIndex, SLANG_MATRIX_LAYOUT_COLUMN_MAJOR);
 
 		// compile
 
@@ -249,6 +250,9 @@ ref<ShaderModule> ShaderModule::Create(
 		const char* msg = request->getDiagnosticOutput();
 		if (msg) std::cout << msg;
 		if (SLANG_FAILED(r)) {
+			if (!allowRetry)
+				throw std::runtime_error(msg);
+
 			pfd::message n("Shader compilation failed", "Retry?", pfd::choice::yes_no);
 			if (n.result() == pfd::button::yes) {
 				continue;

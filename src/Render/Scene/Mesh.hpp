@@ -24,6 +24,7 @@ struct MeshVertexAttributeLayout {
 	vk::Format          format = vk::Format::eR32G32B32Sfloat;
 	uint32_t            offset = 0;
 	vk::VertexInputRate inputRate = vk::VertexInputRate::eVertex;
+	inline bool operator==(const MeshVertexAttributeLayout&) const = default;
 };
 using MeshVertexAttribute        = std::pair<BufferView/*vertex buffer*/, MeshVertexAttributeLayout>;
 using MeshVertexAttributeBinding = std::pair<uint32_t  /*binding index*/, MeshVertexAttributeLayout>;
@@ -37,6 +38,31 @@ struct MeshLayout {
 	vk::PrimitiveTopology       topology  = vk::PrimitiveTopology::eTriangleList;
 	vk::IndexType               indexType = vk::IndexType::eUint32;
 	bool                        hasIndices = true;
+
+	inline bool operator==(const MeshLayout& rhs) const {
+		if (topology != rhs.topology ||
+			indexType != rhs.indexType ||
+			hasIndices != rhs.hasIndices)
+			return false;
+
+		if (vertexAttributeBindings.size() != rhs.vertexAttributeBindings.size())
+			return false;
+
+		for (const auto&[type, attribs] : vertexAttributeBindings) {
+			if (auto it = rhs.vertexAttributeBindings.find(type); it == rhs.vertexAttributeBindings.end())
+				return false;
+
+			const auto& rhsAttribs = rhs.vertexAttributeBindings.at(type);
+			if (attribs.size() != rhsAttribs.size())
+				return false;
+
+			for (size_t i = 0; i < attribs.size(); i++) {
+				if (attribs[i].first != rhsAttribs[i].first || attribs[i].second != rhsAttribs[i].second)
+					return false;
+			}
+		}
+		return true;
+	}
 };
 
 struct Mesh {

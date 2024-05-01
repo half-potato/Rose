@@ -19,6 +19,7 @@ class PipelineLayout {
 private:
 	vk::raii::PipelineLayout mLayout = nullptr;
 	vk::ShaderStageFlags     mStageMask = (vk::ShaderStageFlagBits)0;
+	vk::PipelineStageFlags2  mPipelineStageMask = (vk::PipelineStageFlags2)0;
 	PipelineLayoutInfo       mInfo = {};
 	ShaderParameterBinding   mRootBinding = {};
 	DescriptorSetLayouts     mDescriptorSetLayouts = {};
@@ -32,8 +33,9 @@ public:
 	inline const vk::raii::PipelineLayout* operator->() const { return &mLayout; }
 
 	inline const ShaderParameterBinding& RootBinding() const { return mRootBinding; }
-	inline const DescriptorSetLayouts& GetDescriptorSetLayouts() const { return mDescriptorSetLayouts; }
-	inline vk::ShaderStageFlags StageMask() const { return mStageMask; }
+	inline const DescriptorSetLayouts&   GetDescriptorSetLayouts() const { return mDescriptorSetLayouts; }
+	inline       vk::ShaderStageFlags    ShaderStageMask() const { return mStageMask; }
+	inline       vk::PipelineStageFlags2 PipelineStageMask() const { return mPipelineStageMask; }
 };
 
 

@@ -1,16 +1,18 @@
 import Render.GBuffer;
 import Render.Transform;
+import Core.PackedTypes;
 import cbt.leb;
+import voronoise;
 
 #ifdef PROCEDURAL_NODE_SRC
 #define add(a, b) ((a) + (b))
 #define sub(a, b) ((a) - (b))
 PROCEDURAL_NODE_SRC
 #else
-#error "must define PROCEDURAL_NODE_SRC"
-struct ProceduralNodeArgs { float3 position; };
-struct ProceduralEvalResult { float height; };
-ProceduralEvalResult GetHeight(ProceduralNodeArgs args) { return { 0 }; }
+struct ProceduralNodeArgs : IDifferentiable { float3 position; };
+struct ProceduralEvalResult : IDifferentiable { float height; };
+[Differentiable]
+ProceduralEvalResult GetHeight(ProceduralNodeArgs args) { return { 1 }; }
 #endif
 
 using namespace RoseEngine;
@@ -28,24 +30,23 @@ cbuffer PushConstants {
     uint split;
 };
 
+#if 1
 [Differentiable]
 float3 GetPosition(float2 uv) {
     uv -= 0.5;
 
-    float3 p;
-    switch (cbtID) {
-	default:
-    case 0: p = float3( 0.5,   uv.y,  uv.x); break; // +x
-    case 1: p = float3(-0.5,   uv.y, -uv.x); break; // -x
-    case 2: p = float3( uv.x,  0.5,  uv.y); break; // +y
-    case 3: p = float3( uv.x, -0.5, -uv.y); break; // -y
-    case 4: p = float3(-uv.x,  uv.y,  0.5); break; // +z
-    case 5: p = float3( uv.x,  uv.y, -0.5); break; // -z
-    }
+    float3 p = float3(0.5, uv.y, uv.x);
     p = normalize(p);
 
     return p * GetHeight({ p }).height;
 }
+#else
+[Differentiable]
+float3 GetPosition(float2 uv) {
+    float3 p = FromOctahedral(float2(2*uv.x-1, -2*uv.y+1));
+	return p * GetHeight( { p }).height;
+}
+#endif
 
 float3x2 GetNodeUvs(const cbt_Node node) {
     float3x2 faceVertices = float3x2(1, 0, 0, 0, 0, 1);
@@ -89,7 +90,6 @@ float3x4 GetProjectedNodeVertices(const cbt_Node node, const float3x2 uvs) {
 bool ShouldSplit(const cbt_Node node) {
     const float3x2 uvs = GetNodeUvs(node);
     const float3x4 clipPos = GetProjectedNodeVertices(node, uvs);
-
 	int2 minv =  int2(screenSize);
 	int2 maxv = -int2(screenSize);
     int2 verts[3];
@@ -118,20 +118,20 @@ void Subdivide(uint3 threadId: SV_DispatchThreadID) {
     uint threadID = threadId.x;
 
     uint count = cbt_NodeCount(cbtID);
-    if (threadID < count) {
-        let node = cbt_DecodeNode(cbtID, threadID);
+    if (threadID >= count) return;
 
-        if (split == 0) {
-			const leb_DiamondParent diamondParent = leb_DecodeDiamondParent_Square(node);
-			if (!ShouldSplit(diamondParent.base) && !ShouldSplit(diamondParent.top)) {
-				leb_MergeNode_Square(cbtID, node, diamondParent);
-			}
-        } else {
-			if (ShouldSplit(node)) {
-				leb_SplitNode_Square(cbtID, node);
-			}
+	let node = cbt_DecodeNode(cbtID, threadID);
+	if (split == 0) {
+        const leb_DiamondParent diamondParent = leb_DecodeDiamondParent_Square(node);
+        const bool parentsSplit = ShouldSplit(diamondParent.base) || ShouldSplit(diamondParent.top);
+        if (!parentsSplit) {
+			leb_MergeNode_Square(cbtID, node, diamondParent);
 		}
-    }
+	} else {
+		if (ShouldSplit(node)) {
+			leb_SplitNode_Square(cbtID, node);
+		}
+	}
 }
 
 [shader("vertex")]

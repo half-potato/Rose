@@ -1,4 +1,5 @@
 import cbt;
+import Core.Indirect;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -82,13 +83,6 @@ void WriteIndirectDispatchArgs(uint3 dispatchThreadID: SV_DispatchThreadID, RWSt
 			1 );
 	}
 }
-
-struct VkDrawIndirectCommand {
-    uint vertexCount;
-    uint instanceCount;
-    uint firstVertex;
-    uint firstInstance;
-};
 
 [shader("compute")]
 [numthreads(32, 1, 1)]

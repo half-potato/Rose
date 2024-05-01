@@ -97,7 +97,7 @@ private:
 	CachedData mCache = {};
 
 	void AllocateDescriptorPool();
-	DescriptorSets AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts);
+	DescriptorSets AllocateDescriptorSets(const vk::ArrayProxy<const vk::DescriptorSetLayout>& layouts, const vk::ArrayProxy<const uint32_t>& variableSetCounts = {});
 
 public:
 	inline       vk::raii::CommandBuffer& operator*()        { return mCommandBuffer; }
@@ -136,7 +136,7 @@ public:
 	void PushConstants  (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) const;
 	void BindParameters (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter);
 
-	void PushDebugLabel(const std::string& name, const float4 color = float4(1,1,1,1));
+	void PushDebugLabel(const std::string& name, const float4 color = float4(1,1,1,0));
 	void PopDebugLabel();
 
 	#pragma region Barriers
@@ -305,8 +305,37 @@ public:
 			.extent = vk::Extent3D{dst.Extent().x, dst.Extent().y, dst.Extent().z} });
 	}
 
+	// Copies data to a host-visible buffer
 	template<std::ranges::contiguous_range R>
-	inline BufferView UploadData(R&& data, const vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eUniformBuffer) {
+	inline BufferView UploadData(R&& data) {
+		const size_t size = sizeof(std::ranges::range_value_t<R>) * data.size();
+
+		BufferView buffer = {};
+		BufferView hostBuffer = {};
+		if (auto it_ = mCache.mUploadBuffers.find((vk::BufferUsageFlags)0); it_ != mCache.mUploadBuffers.end()) {
+			auto& q = it_->second;
+			if (!q.empty() && q.back().first.size() >= size) {
+				// find smallest cached buffer that can fit size
+				auto it = std::ranges::lower_bound(q, size, {}, [](const auto& b) { return b.first.size(); });
+				if (it != q.end()) {
+					std::tie(hostBuffer, buffer) = *it;
+					q.erase(it);
+				}
+			}
+		}
+
+		if (!hostBuffer || hostBuffer.size() < size) {
+			hostBuffer = Buffer::Create(*mDevice, data);
+			mDevice->SetDebugName(**hostBuffer.mBuffer, "Transient upload buffer");
+		} else
+			std::memcpy(hostBuffer.data(), data.data(), size);
+
+		return mCache.mNewUploadBuffers[(vk::BufferUsageFlags)0].emplace_back(hostBuffer, buffer).first;
+	}
+
+	// Copies data to a device-local buffer
+	template<std::ranges::contiguous_range R>
+	inline BufferView UploadData(R&& data, const vk::BufferUsageFlags usage) {
 		const size_t size = sizeof(std::ranges::range_value_t<R>) * data.size();
 
 		BufferView hostBuffer = {};
@@ -340,41 +369,9 @@ public:
 			mDevice->SetDebugName(**buffer.mBuffer, "Transient buffer (" + vk::to_string(usage) + ")");
 		}
 
-		Copy(hostBuffer, buffer);
+		Copy(hostBuffer.slice(0, size), buffer);
 
 		return mCache.mNewUploadBuffers[usage].emplace_back(hostBuffer, buffer).second;
-	}
-
-	template<std::ranges::contiguous_range R>
-	inline void UploadData(R&& data, const BufferView& dst) {
-		const size_t size = sizeof(std::ranges::range_value_t<R>) * data.size();
-
-		const vk::BufferUsageFlags usage = (vk::BufferUsageFlagBits)0;
-
-		BufferView hostBuffer = {};
-		BufferView buffer = {};
-		if (auto it_ = mCache.mUploadBuffers.find(usage); it_ != mCache.mUploadBuffers.end()) {
-			auto& q = it_->second;
-			if (!q.empty() && q.back().first.size() >= size) {
-				// find smallest cached buffer that can fit size
-				auto it = std::ranges::lower_bound(q, size, {}, [](const auto& b) { return b.first.size(); });
-				if (it != q.end()) {
-					std::tie(hostBuffer, buffer) = *it;
-					q.erase(it);
-				}
-			}
-		}
-
-		if (hostBuffer && hostBuffer.size() >= size) {
-			std::memcpy(hostBuffer.data(), data.data(), size);
-		} else {
-			hostBuffer = Buffer::Create(*mDevice, data);
-			mDevice->SetDebugName(**hostBuffer.mBuffer, "Transient upload buffer");
-		}
-
-		Copy(hostBuffer, dst);
-
-		mCache.mNewUploadBuffers[usage].emplace_back(hostBuffer, buffer);
 	}
 
 	inline void Blit(const ref<Image>& src, const ref<Image>& dst, const vk::ArrayProxy<const vk::ImageBlit>& regions, const vk::Filter filter) {

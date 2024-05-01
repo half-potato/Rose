@@ -3,7 +3,7 @@
 #include <Core/CommandContext.hpp>
 #include <Core/TransientResourceCache.hpp>
 #include <Core/Gui.hpp>
-#include "Transform.hpp"
+#include "Transform/Transform.hpp"
 
 namespace RoseEngine {
 
@@ -64,7 +64,7 @@ struct EditorCamera {
 
 	inline std::pair<Transform,Transform> GetViewProjection(float aspect) const {
 		const quat      rot = glm::angleAxis(-cameraAngle.y, float3(0,1,0)) * glm::angleAxis( cameraAngle.x, float3(1,0,0));
-		const Transform view = inverse( Transform::Rotate(rot) * Transform::Translate(cameraPos) );
+		const Transform view = inverse( Transform::Translate(cameraPos) * Transform::Rotate(rot) );
 		const Transform projection = Transform::Perspective(glm::radians(fovY), aspect, nearZ);
 		return { view, projection };
 	}
@@ -75,7 +75,7 @@ public:
 	virtual void Initialize(CommandContext& context) {}
 	virtual void InspectorGui(CommandContext& context) {}
 	virtual void PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) {}
-	virtual void Render(CommandContext& context) = 0;
+	virtual void Render(CommandContext& context) {}
 	virtual void PostRender(CommandContext& context, const GBuffer& gbuffer) {}
 };
 
@@ -121,7 +121,7 @@ public:
 					Image::Create(context.GetDevice(), ImageInfo{
 						.format = vk::Format::eR8G8B8A8Unorm,
 						.extent = uint3(extent, 1),
-						.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment,
+						.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eColorAttachment,
 						.queueFamilies = { context.QueueFamily() } }),
 					vk::ImageSubresourceRange{
 						.aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -169,8 +169,10 @@ public:
 
 		const auto [view,projection] = camera.GetViewProjection(extentf.x / extentf.y);
 
+		context.PushDebugLabel("ViewportWidget::PreRender");
 		for (const auto& r : renderers)
 			r->PreRender(context, gbuffer, view, projection);
+		context.PopDebugLabel();
 
 		context.AddBarrier(gbuffer.renderTarget, Image::ResourceState{
 			.layout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -189,6 +191,7 @@ public:
 			.queueFamily = context.QueueFamily() });
 		context.ExecuteBarriers();
 
+		context.PushDebugLabel("ViewportWidget::Render");
 		vk::RenderingAttachmentInfo attachments[2] = {
 			vk::RenderingAttachmentInfo {
 				.imageView = *gbuffer.renderTarget,
@@ -232,9 +235,12 @@ public:
 			r->Render(context);
 
 		context->endRendering();
+		context.PopDebugLabel();
 
+		context.PushDebugLabel("ViewportWidget::PostRender");
 		for (const auto& r : renderers)
 			r->PostRender(context, gbuffer);
+		context.PopDebugLabel();
 	}
 };
 

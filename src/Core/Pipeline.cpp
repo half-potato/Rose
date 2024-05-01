@@ -4,6 +4,8 @@
 #include <map>
 #include <optional>
 
+//#define LOG_SHADER_REFLECTION
+
 namespace RoseEngine {
 
 struct PipelineBindings {
@@ -12,7 +14,7 @@ struct PipelineBindings {
 		vk::DescriptorSetLayoutBinding,
 		std::optional<vk::DescriptorBindingFlags>,
 		std::vector<vk::Sampler> >;
-	std::vector<std::map<uint32_t/*binding index*/, DescriptorBindingData>> bindingData;
+	std::vector<std::map<uint32_t/*binding index*/, DescriptorBindingData>> bindingData = {};
 
 	uint32_t pushConstantRangeBegin = std::numeric_limits<uint32_t>::max();
 	uint32_t pushConstantRangeEnd = 0;
@@ -23,8 +25,9 @@ struct PipelineBindings {
 		for (const auto&[name, subBinding] : shaderBinding) {
 			auto it = pipelineBinding.find(name);
 			const bool hasBinding = it != pipelineBinding.end();
-			if (!hasBinding)
-				pipelineBinding[name] = subBinding;
+			if (!hasBinding) {
+				pipelineBinding[name] = subBinding.raw_variant();  // dont include sub parameters
+			}
 
 			uint32_t offset = constantOffset;
 
@@ -50,7 +53,7 @@ struct PipelineBindings {
 
 					if (auto it = setBindingData.find(binding->bindingIndex); it != setBindingData.end()) {
 						auto&[setLayoutBinding, flags, samplers] = it->second;
-						if (setLayoutBinding.descriptorType  != vk::DescriptorType::eUniformBuffer)
+						if (setLayoutBinding.descriptorType != vk::DescriptorType::eUniformBuffer)
 							throw std::logic_error("Shader modules contain different descriptors at the same binding index");
 						setLayoutBinding.stageFlags |= stage;
 					} else
@@ -70,7 +73,6 @@ struct PipelineBindings {
 					if (!b || *b != *binding) {
 						throw std::logic_error("Binding appears multiple times, but is not the same");
 					}
-					continue;
 				}
 
 				// get binding flags from layout info
@@ -137,10 +139,29 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::Array
 
 	PipelineBindings bindings = {};
 
-	layout->mStageMask = (vk::ShaderStageFlagBits)0;
+	auto GetPipelineStage = [](auto stage) -> vk::PipelineStageFlagBits2 {
+		switch (stage) {
+			default: return (vk::PipelineStageFlagBits2)0;
+			case vk::ShaderStageFlagBits::eVertex:                 return vk::PipelineStageFlagBits2::eVertexShader;
+			case vk::ShaderStageFlagBits::eTessellationControl:    return vk::PipelineStageFlagBits2::eTessellationControlShader;
+			case vk::ShaderStageFlagBits::eTessellationEvaluation: return vk::PipelineStageFlagBits2::eTessellationEvaluationShader;
+			case vk::ShaderStageFlagBits::eGeometry:               return vk::PipelineStageFlagBits2::eGeometryShader;
+			case vk::ShaderStageFlagBits::eFragment:               return vk::PipelineStageFlagBits2::eFragmentShader;
+			case vk::ShaderStageFlagBits::eCompute:                return vk::PipelineStageFlagBits2::eComputeShader;
+			case vk::ShaderStageFlagBits::eRaygenKHR:              return vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+			case vk::ShaderStageFlagBits::eAnyHitKHR:              return vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+			case vk::ShaderStageFlagBits::eClosestHitKHR:          return vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+			case vk::ShaderStageFlagBits::eMissKHR:                return vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+			case vk::ShaderStageFlagBits::eIntersectionKHR:        return vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+		}
+	};
+
+	layout->mStageMask         = (vk::ShaderStageFlagBits)0;
+	layout->mPipelineStageMask = (vk::PipelineStageFlagBits2)0;
 	for (const auto& shader : shaders) {
 		bindings.AddBindings(layout->mRootBinding, shader->RootBinding(), shader->Stage(), info);
 		layout->mStageMask |= shader->Stage();
+		layout->mPipelineStageMask |= GetPipelineStage(shader->Stage());
 	}
 
 	#ifdef LOG_SHADER_REFLECTION

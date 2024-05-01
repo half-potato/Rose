@@ -63,10 +63,36 @@ protected:
 	friend struct ProceduralNodeCompiler;
 	NameMap<NodeOutputConnection> inputs = {};
 	std::vector<std::string> outputs = { NodeOutputConnection::gDefaultOutputName };
+
 	float2 pos = { 0, 0 };
 	bool hasPos = false;
 
 public:
+	enum class NodeType {
+		eMathNode,
+		eExpressionNode,
+		eInputVariable,
+		eOutputVariable
+	};
+	inline static const NameMap<NodeType> gNodeTypeMap = {
+		{ "MathNode",       NodeType::eMathNode },
+		{ "ExpressionNode", NodeType::eExpressionNode },
+		{ "InputVariable",  NodeType::eInputVariable },
+		{ "OutputVariable", NodeType::eOutputVariable },
+	};
+
+	static std::unordered_map<int, ProceduralNode*> gNodeIdMap;
+	static std::unordered_map<int, std::tuple<ProceduralNode*, std::string, bool>> gAttributeIdMap;
+	static std::unordered_map<int, std::pair<int, int>> gLinkIdMap;
+
+	static int GetNodeId(const ProceduralNode* node);
+	static int GetAttributeId(const ProceduralNode* node, const std::string& attrib, bool input);
+	static int GetLinkId(const int start, const int end);
+	inline static ProceduralNode* GetNode(int id) { return gNodeIdMap.at(id); }
+	inline static std::tuple<ProceduralNode*, std::string, bool> GetAttribute(int id) { return gAttributeIdMap.at(id); }
+	inline static std::pair<int, int> GetLink(const int id) { return gLinkIdMap.at(id); }
+
+
 	inline const auto& GetInputs() const { return inputs; }
 	inline const auto& GetOutputNames() const { return outputs; }
 	inline void SetInput(const std::string& name, const NodeOutputConnection& connection) {
@@ -98,7 +124,7 @@ public:
 	}
 
 	// Gui function for the whole node. Calls Gui() and recurses on inputs
-	virtual void NodeGui();
+	virtual void NodeGui(std::unordered_set<int>& drawn);
 	virtual void Gui(float width = 0);
 
 	virtual NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const = 0;
@@ -125,11 +151,6 @@ inline std::pair<NodeOutputMap*, bool> ProceduralNodeCompiler::GetNodeOutputName
 
 	return std::make_pair(&nodeMap.emplace(node, vars).first->second, false);
 }
-
-int GetNodeId(const ProceduralNode* n);
-int GetAttributeId(const ProceduralNode* node, const std::string& attrib, bool input);
-ProceduralNode* GetNode(int id);
-std::tuple<ProceduralNode*, std::string, bool> GetAttribute(int id);
 
 }
 

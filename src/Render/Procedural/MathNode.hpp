@@ -4,38 +4,39 @@
 
 namespace RoseEngine {
 
-// This node is effectively a passthrough which 'compiles' to the given expression
 class ExpressionNode : public ProceduralNode {
 public:
-	std::string value = "0";
+	std::string expression = "0";
+	std::vector<std::string> inputMapping = {};
 
 	ExpressionNode() = default;
 	ExpressionNode(const ExpressionNode&) = default;
 	ExpressionNode(ExpressionNode&&) = default;
 	ExpressionNode& operator=(const ExpressionNode&) = default;
 	ExpressionNode& operator=(ExpressionNode&&) = default;
-	inline ExpressionNode(const std::string& value) : value(value) {}
+	inline ExpressionNode(const std::string& expression_) : expression(expression_) {}
 
 	inline size_t hash() const override {
-		return HashArgs(ProceduralNode::hash(), value);
+		return HashArgs(ProceduralNode::hash(), expression);
 	}
 
-	inline NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const override {
-		return { {  NodeOutputConnection::gDefaultOutputName, value } };
-	}
+	NodeOutputMap Compile(ProceduralNodeCompiler& compiler) const override;
 
 	void Gui(float width = 0) override;
 
 	inline virtual const char* GetType() const { return "ExpressionNode"; }
 	inline virtual json Serialize() const {
 		json dst = ProceduralNode::Serialize();
-		dst["expression"] = value;
+		dst["expression"] = expression;
+		dst["inputMapping"] = inputMapping;
 		return dst;
 	}
 	inline static ref<ProceduralNode> Deserialize(const json& serialized) {
 		auto n = make_ref<ExpressionNode>(serialized["expression"].get<std::string>());
 		n->inputs.clear();
 		n->outputs.clear();
+		for (const auto& i : serialized["inputMapping"])
+			n->inputMapping.emplace_back(i.get<std::string>());
 		return n;
 	}
 };

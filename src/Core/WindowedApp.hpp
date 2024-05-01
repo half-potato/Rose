@@ -18,14 +18,15 @@ struct WindowedApp {
 	vk::raii::Semaphore commandSignalSemaphore = nullptr;
 
 	uint32_t presentQueueFamily = 0;
+	bool alwaysSync = false;
 
 	struct Widget {
 		std::function<void()> draw;
 		bool visible = true;
 		ImGuiWindowFlags flags = (ImGuiWindowFlags)0;
 	};
-
 	std::unordered_map<std::string, Widget> widgets = {};
+	std::unordered_map<std::string, std::vector<std::function<void()>>> menuItems = {};
 
 	double dt = 0;
 	double fps = 0;
@@ -52,7 +53,7 @@ struct WindowedApp {
 
 		commandSignalSemaphore = vk::raii::Semaphore(**device, vk::SemaphoreCreateInfo{});
 
-		AddWidget("Memory", [=]() {
+		AddWidget("Memory", [&]() {
 			const bool memoryBudgetExt = device->EnabledExtensions().contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
 			vk::StructureChain<vk::PhysicalDeviceMemoryProperties2, vk::PhysicalDeviceMemoryBudgetPropertiesEXT> structureChain;
 			if (memoryBudgetExt) {
@@ -96,7 +97,7 @@ struct WindowedApp {
 			}
 		});
 
-		AddWidget("Window", [=]() {
+		AddWidget("Window", [&]() {
 			{
 				uint2 e = window->GetExtent();
 				bool changed = false;
@@ -145,14 +146,16 @@ struct WindowedApp {
 			}
 		});
 
-		AddWidget("Profiler", [&](){
-			ImGui::Text("%.1f fps (%.1f ms)", fps, 1000 / fps);
-		});
-
 		AddWidget("Dear ImGui Demo", [&]() {
 			ImGui::ShowDemoWindow(&widgets["Dear ImGui Demo"].visible);
 		});
 
+		AddMenuItem("Edit", [&]() {
+			ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0,0,0,0));
+			ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0,0,0,0));
+			ImGui::Checkbox("Always wait for gpu", &alwaysSync);
+			ImGui::PopStyleColor(2);
+		});
 	}
 	inline ~WindowedApp() {
 		device->Wait();
@@ -161,6 +164,10 @@ struct WindowedApp {
 
 	inline void AddWidget(const std::string& name, auto fn, const bool initialState = false, const ImGuiWindowFlags flags = (ImGuiWindowFlags)0) {
 		widgets[name] = Widget{fn, initialState, flags};
+	}
+
+	inline void AddMenuItem(const std::string& name, auto fn) {
+		menuItems[name].emplace_back(fn);
 	}
 
 	inline bool CreateSwapchain() {
@@ -187,8 +194,15 @@ struct WindowedApp {
 		// Menu bar
 		if (ImGui::BeginMenuBar()) {
 			if (ImGui::BeginMenu("File")) {
-				if (ImGui::MenuItem("Open")) {
-				}
+				if (auto it = menuItems.find("File"); it != menuItems.end())
+					for (const auto& fn : it->second)
+						fn();
+				ImGui::EndMenu();
+			}
+			if (ImGui::BeginMenu("Edit")) {
+				if (auto it = menuItems.find("Edit"); it != menuItems.end())
+					for (const auto& fn : it->second)
+						fn();
 				ImGui::EndMenu();
 			}
 			if (ImGui::BeginMenu("View")) {
@@ -196,6 +210,11 @@ struct WindowedApp {
 					if (ImGui::MenuItem(name.c_str())) {
 						widget.visible = !widget.visible;
 					}
+				}
+				if (auto it = menuItems.find("View"); it != menuItems.end()) {
+					ImGui::Separator();
+					for (const auto& fn : it->second)
+						fn();
 				}
 				ImGui::EndMenu();
 			}
@@ -206,6 +225,10 @@ struct WindowedApp {
 				VK_API_VERSION_MAJOR(instance->VulkanVersion()),
 				VK_API_VERSION_MINOR(instance->VulkanVersion()),
 				VK_API_VERSION_PATCH(instance->VulkanVersion()));
+
+			ImGui::Dummy(ImVec2(16, ImGui::GetContentRegionAvail().y));
+
+			ImGui::Text("%.1f fps (%.1f ms)", fps, 1000 / fps);
 
 			ImGui::EndMenuBar();
 		}
@@ -244,7 +267,9 @@ struct WindowedApp {
 
 		Update();
 
+		context->PushDebugLabel("Gui::Render");
 		Gui::Render(*context, swapchain->CurrentImage());
+		context->PopDebugLabel();
 
 		context->AddBarrier(swapchain->CurrentImage(), Image::ResourceState{
 			.layout = vk::ImageLayout::ePresentSrcKHR,
@@ -252,11 +277,13 @@ struct WindowedApp {
 			.access = vk::AccessFlagBits2::eNone,
 			.queueFamily = presentQueueFamily });
 		context->ExecuteBarriers();
-		context->Submit(0,
+		uint64_t t = context->Submit(0,
 			*commandSignalSemaphore, (size_t)0,
 			swapchain->ImageAvailableSemaphore(),
 			(vk::PipelineStageFlags)vk::PipelineStageFlagBits::eColorAttachmentOutput,
 			(size_t)0);
+
+		if (alwaysSync) device->Wait(t);
 
 		swapchain->Present(*(*device)->getQueue(presentQueueFamily, 0), *commandSignalSemaphore);
 	}
