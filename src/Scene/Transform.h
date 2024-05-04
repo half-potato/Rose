@@ -4,6 +4,7 @@
 #include <Core/MathTypes.hpp>
 #define CPP_CONST const
 #else
+import Core.Math;
 #define CPP_CONST
 #endif
 
@@ -67,8 +68,7 @@ inline float4 operator*(const Transform lhs, const float4 v) {
 #endif
 inline float3 operator*(const Transform lhs, const float3 v) {
 	float4 h = lhs * float4(v, 1);
-	if (h.w > 0)
-		h /= h.w;
+	if (h.w > 0) h /= h.w;
 	return float3(h.x, h.y, h.z);
 }
 
@@ -78,11 +78,11 @@ inline Transform inverse(const Transform t) {
 	r.transform = inverse(t.transform);
 	return r;
 }
+#endif
 inline Transform transpose(const Transform t) {
 	Transform r = {};
 	r.transform = transpose(t.transform);
 	return r;
 }
-#endif
 
 }

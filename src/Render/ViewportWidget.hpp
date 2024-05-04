@@ -3,15 +3,9 @@
 #include <Core/CommandContext.hpp>
 #include <Core/TransientResourceCache.hpp>
 #include <Core/Gui.hpp>
-#include "Transform/Transform.hpp"
+#include <Scene/Transform.hpp>
 
 namespace RoseEngine {
-
-struct GBuffer {
-	ImageView renderTarget;
-	ImageView visibility;
-	ImageView depth;
-};
 
 struct EditorCamera {
 	float3 cameraPos   = float3(0, 2, 2);
@@ -20,15 +14,6 @@ struct EditorCamera {
 	float  nearZ = 0.01f;
 
 	float moveSpeed = 1.f;
-
-	inline void InspectorGui() {
-		ImGui::PushID("Camera");
-		ImGui::DragFloat3("Position", &cameraPos.x);
-		ImGui::DragFloat2("Angle", &cameraAngle.x);
-		Gui::ScalarField("Vertical field of view", &fovY);
-		Gui::ScalarField("Near Z", &nearZ);
-		ImGui::PopID();
-	}
 
 	inline void Update(double dt) {
 		if (ImGui::IsWindowHovered()) {
@@ -62,21 +47,40 @@ struct EditorCamera {
 		}
 	}
 
-	inline std::pair<Transform,Transform> GetViewProjection(float aspect) const {
+	inline std::tuple<Transform,Transform> GetViewProjection(float aspect) const {
 		const quat      rot = glm::angleAxis(-cameraAngle.y, float3(0,1,0)) * glm::angleAxis( cameraAngle.x, float3(1,0,0));
 		const Transform view = inverse( Transform::Translate(cameraPos) * Transform::Rotate(rot) );
 		const Transform projection = Transform::Perspective(glm::radians(fovY), aspect, nearZ);
 		return { view, projection };
 	}
 };
+inline void InspectorGui(EditorCamera& camera) {
+	ImGui::PushID("Camera");
+	ImGui::DragFloat3("Position", &camera.cameraPos.x);
+	ImGui::DragFloat2("Angle", &camera.cameraAngle.x);
+	Gui::ScalarField("Vertical field of view", &camera.fovY);
+	Gui::ScalarField("Near Z", &camera.nearZ);
+	ImGui::PopID();
+}
+
+
+struct RenderData {
+	ImageView renderTarget;
+	ImageView visibility;
+	ImageView depth;
+
+	Transform view;
+	Transform projection;
+};
 
 class IRenderer {
 public:
 	virtual void Initialize(CommandContext& context) {}
-	virtual void InspectorGui(CommandContext& context) {}
-	virtual void PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) {}
-	virtual void Render(CommandContext& context) {}
-	virtual void PostRender(CommandContext& context, const GBuffer& gbuffer) {}
+	virtual void InspectorWidget(CommandContext& context) {}
+
+	virtual void PreRender (CommandContext& context, const RenderData& renderData) {}
+	virtual void Render    (CommandContext& context, const RenderData& renderData) {}
+	virtual void PostRender(CommandContext& context, const RenderData& renderData) {}
 };
 
 class ViewportWidget {
@@ -84,7 +88,7 @@ private:
 	EditorCamera camera = {};
 	std::vector<ref<IRenderer>> renderers = {};
 
-	TransientResourceCache<GBuffer> cachedGbuffers = {};
+	TransientResourceCache<RenderData> cachedRenderData = {};
 	uint2 cachedGbufferExtent = uint2(0,0);
 
 public:
@@ -96,13 +100,13 @@ public:
 		camera = {};
 	}
 
-	inline void InspectorGui(CommandContext& context) {
+	inline void InspectorWidget(CommandContext& context) {
 		if (ImGui::CollapsingHeader("Camera")) {
-			camera.InspectorGui();
+			InspectorGui(camera);
 		}
 
 		for (const auto& r : renderers)
-			r->InspectorGui(context);
+			r->InspectorWidget(context);
 	}
 
 	inline void Render(CommandContext& context, double dt) {
@@ -111,12 +115,14 @@ public:
 
 		camera.Update(dt);
 
+		if (extent.x == 0 || extent.y == 0) return;
+
 		if (cachedGbufferExtent != extent) {
 			context.GetDevice().Wait();
-			cachedGbuffers.clear();
+			cachedRenderData.clear();
 			cachedGbufferExtent = extent;
 		}
-		auto gbuffer = cachedGbuffers.pop_or_create(context.GetDevice(), [&]() {
+		RenderData renderData = cachedRenderData.pop_or_create(context.GetDevice(), [&]() {
 			auto renderTarget = ImageView::Create(
 					Image::Create(context.GetDevice(), ImageInfo{
 						.format = vk::Format::eR8G8B8A8Unorm,
@@ -153,38 +159,37 @@ public:
 						.levelCount = 1,
 						.baseArrayLayer = 0,
 						.layerCount = 1 });
-			return GBuffer{
+			return RenderData{
 				.renderTarget = renderTarget,
 				.visibility = visibility,
 				.depth = depth };
 		});
-		cachedGbuffers.push(gbuffer, context.GetDevice().NextTimelineSignal());
+		std::tie(renderData.view, renderData.projection) = camera.GetViewProjection(extentf.x / extentf.y);
+		cachedRenderData.push(renderData, context.GetDevice().NextTimelineSignal());
 
-		ImGui::Image(Gui::GetTextureID(gbuffer.renderTarget, vk::Filter::eNearest), std::bit_cast<ImVec2>(extentf));
+		ImGui::Image(Gui::GetTextureID(renderData.renderTarget, vk::Filter::eNearest), std::bit_cast<ImVec2>(extentf));
 
 		const float2 viewportMin = std::bit_cast<float2>(ImGui::GetItemRectMin());
 		const float2 viewportMax = std::bit_cast<float2>(ImGui::GetItemRectMax());
 		ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y);
 		ImGuizmo::SetID(0);
 
-		const auto [view,projection] = camera.GetViewProjection(extentf.x / extentf.y);
-
 		context.PushDebugLabel("ViewportWidget::PreRender");
 		for (const auto& r : renderers)
-			r->PreRender(context, gbuffer, view, projection);
+			r->PreRender(context, renderData);
 		context.PopDebugLabel();
 
-		context.AddBarrier(gbuffer.renderTarget, Image::ResourceState{
+		context.AddBarrier(renderData.renderTarget, Image::ResourceState{
 			.layout = vk::ImageLayout::eColorAttachmentOptimal,
 			.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
 			.queueFamily = context.QueueFamily() });
-		context.AddBarrier(gbuffer.visibility, Image::ResourceState{
+		context.AddBarrier(renderData.visibility, Image::ResourceState{
 			.layout = vk::ImageLayout::eColorAttachmentOptimal,
 			.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
 			.queueFamily = context.QueueFamily() });
-		context.AddBarrier(gbuffer.depth, Image::ResourceState{
+		context.AddBarrier(renderData.depth, Image::ResourceState{
 			.layout = vk::ImageLayout::eDepthAttachmentOptimal,
 			.stage  = vk::PipelineStageFlagBits2::eLateFragmentTests,
 			.access =  vk::AccessFlagBits2::eDepthStencilAttachmentRead|vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -194,16 +199,16 @@ public:
 		context.PushDebugLabel("ViewportWidget::Render");
 		vk::RenderingAttachmentInfo attachments[2] = {
 			vk::RenderingAttachmentInfo {
-				.imageView = *gbuffer.renderTarget,
+				.imageView = *renderData.renderTarget,
 				.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 				.resolveMode = vk::ResolveModeFlagBits::eNone,
 				.resolveImageView = {},
 				.resolveImageLayout = vk::ImageLayout::eUndefined,
 				.loadOp  = vk::AttachmentLoadOp::eClear,
 				.storeOp = vk::AttachmentStoreOp::eStore,
-				.clearValue = vk::ClearValue{vk::ClearColorValue{std::array<float,4>{ .5f, .6f, .7f, 1.f }} } },
+				.clearValue = vk::ClearValue{vk::ClearColorValue{std::array<float,4>{ 0, 0, 0, 0 }} } },
 			vk::RenderingAttachmentInfo {
-				.imageView = *gbuffer.visibility,
+				.imageView = *renderData.visibility,
 				.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 				.resolveMode = vk::ResolveModeFlagBits::eNone,
 				.resolveImageView = {},
@@ -212,7 +217,7 @@ public:
 				.storeOp = vk::AttachmentStoreOp::eStore,
 				.clearValue = vk::ClearValue{vk::ClearColorValue{std::array<uint,4>{ ~0u, ~0u, ~0u, ~0u }} } } };
 		vk::RenderingAttachmentInfo depthAttachment {
-			.imageView = *gbuffer.depth,
+			.imageView = *renderData.depth,
 			.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
 			.resolveMode = vk::ResolveModeFlagBits::eNone,
 			.resolveImageView = {},
@@ -232,14 +237,14 @@ public:
 		context->setScissor(0, vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ extent.x, extent.y } } );
 
 		for (const auto& r : renderers)
-			r->Render(context);
+			r->Render(context, renderData);
 
 		context->endRendering();
 		context.PopDebugLabel();
 
 		context.PushDebugLabel("ViewportWidget::PostRender");
 		for (const auto& r : renderers)
-			r->PostRender(context, gbuffer);
+			r->PostRender(context, renderData);
 		context.PopDebugLabel();
 	}
 };

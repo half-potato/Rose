@@ -9,6 +9,17 @@ namespace RoseEngine {
 inline float luminance(const float3 color) { return dot(color, float3(0.2126, 0.7152, 0.0722)); }
 inline float atan2_stable(const float y, const float x) { return x == 0.0 ? (y == 0 ? 0 : (y < 0 ? -M_PI / 2 : M_PI / 2)) : atan2(y, x); }
 
+inline float2 xyz2sph(const float3 v) {
+	const float theta = atan2_stable(v.z, v.x);
+	return float2(theta*M_1_PI*.5 + .5, acos(clamp(v.y, -1.f, 1.f))*M_1_PI);
+}
+inline float3 sph2xyz(float2 uv) {
+	uv.x = uv.x*2 - 1;
+	uv *= M_PI;
+	const float sinPhi = sin(uv.y);
+	return float3(sinPhi*cos(uv.x), cos(uv.y), sinPhi*sin(uv.x));
+}
+
 inline float3 srgb2rgb(const float3 srgb) {
 	// https://en.wikipedia.org/wiki/SRGB#From_sRGB_to_CIE_XYZ
 	float3 rgb;
@@ -27,7 +38,7 @@ inline float3 rgb2srgb(const float3 rgb) {
 inline float3 viridis(const float x) {
 	// from https://www.shadertoy.com/view/XtGGzG
 	float4 x1 = float4(1, x, x*x, x*x*x); // 1 x x2 x3
-	float2 x2 = float2(x1[1], x1[2]) * x1[3]; // x4 x5
+	float2 x2 = float2(x1.y, x1.z) * x1[3]; // x4 x5
 	return float3(
 		dot(x1, float4( 0.280268003, -0.143510503,   2.225793877, -14.815088879)) + dot(x2, float2( 25.212752309, -11.772589584)),
 		dot(x1, float4(-0.002117546,  1.617109353,  -1.909305070,   2.701152864)) + dot(x2, float2(-1.685288385 ,   0.178738871)),

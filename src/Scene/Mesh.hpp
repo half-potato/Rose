@@ -2,6 +2,7 @@
 
 #include <Core/Buffer.hpp>
 #include <Core/Hash.hpp>
+#include "AccelerationStructure.hpp"
 
 namespace RoseEngine {
 
@@ -36,12 +37,10 @@ struct MeshLayout {
 	std::vector<vk::VertexInputBindingDescription>   bindings = {};
 	std::vector<vk::VertexInputAttributeDescription> attributes = {};
 	vk::PrimitiveTopology       topology  = vk::PrimitiveTopology::eTriangleList;
-	vk::IndexType               indexType = vk::IndexType::eUint32;
 	bool                        hasIndices = true;
 
 	inline bool operator==(const MeshLayout& rhs) const {
 		if (topology != rhs.topology ||
-			indexType != rhs.indexType ||
 			hasIndices != rhs.hasIndices)
 			return false;
 
@@ -68,14 +67,40 @@ struct MeshLayout {
 struct Mesh {
 	MeshVertexAttributes  vertexAttributes = {};
 	BufferView            indexBuffer = {};
-	vk::IndexType         indexType = {};
+	uint32_t              indexSize = sizeof(uint32_t);
 	vk::PrimitiveTopology topology = {};
 	vk::AabbPositionsKHR  aabb = {};
-	uint64_t              lastUpdate = 0;
+	AccelerationStructure blas = {};
+	uint64_t              blasUpdateTime = 0;
+	uint64_t              lastUpdateTime = 0;
+
+	inline vk::IndexType IndexType() const { return indexSize == sizeof(uint32_t) ? vk::IndexType::eUint32 : vk::IndexType::eUint16; }
 
 	MeshLayout GetLayout(const ShaderModule& vertexShader) const;
 	void Bind(CommandContext& context, const MeshLayout& layout) const;
 };
+
+inline AccelerationStructure AccelerationStructure::Create(CommandContext& context, const Mesh& mesh, const bool opaque) {
+	auto [positions, vertexLayout] = mesh.vertexAttributes.at(MeshVertexAttributeType::ePosition)[0];
+	const uint32_t vertexCount = (uint32_t)((positions.size_bytes() - vertexLayout.offset) / vertexLayout.stride);
+	const uint32_t primitiveCount = mesh.indexBuffer.size_bytes() / (mesh.indexSize * 3);
+
+	vk::AccelerationStructureGeometryTrianglesDataKHR triangles {
+		.vertexFormat = vertexLayout.format,
+		.vertexData = context.GetDevice()->getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = **positions.mBuffer }) + positions.mOffset,
+		.vertexStride = vertexLayout.stride,
+		.maxVertex = vertexCount,
+		.indexType = mesh.IndexType(),
+		.indexData = context.GetDevice()->getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = **mesh.indexBuffer.mBuffer }) + mesh.indexBuffer.mOffset };
+
+	vk::AccelerationStructureGeometryKHR geometry {
+		.geometryType = vk::GeometryTypeKHR::eTriangles,
+		.geometry = triangles,
+		.flags = opaque ? vk::GeometryFlagBitsKHR::eOpaque : vk::GeometryFlagBitsKHR{}};
+
+	vk::AccelerationStructureBuildRangeInfoKHR range{ .primitiveCount = primitiveCount };
+	return Create(context, vk::AccelerationStructureTypeKHR::eBottomLevel, geometry, range);
+}
 
 }
 
@@ -96,8 +121,7 @@ struct hash<RoseEngine::MeshLayout> {
 			for (const auto&[a,i] : attribs)
 				h = RoseEngine::HashArgs(h, a, i);
 		}
-		h = RoseEngine::HashArgs(h, v.topology);
-		if (v.hasIndices) h = RoseEngine::HashArgs(h, v.indexType);
+		h = RoseEngine::HashArgs(h, v.topology, v.hasIndices);
 		return h;
 	}
 };

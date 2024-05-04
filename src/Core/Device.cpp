@@ -17,9 +17,12 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	features.largePoints = true;
 	features.sampleRateShading = true;
 	features.shaderInt16 = true;
+	features.geometryShader = true;
 	features.shaderStorageBufferArrayDynamicIndexing = true;
 	features.shaderSampledImageArrayDynamicIndexing = true;
 	features.shaderStorageImageArrayDynamicIndexing = true;
+
+	const bool accelerationStructure = device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 
 	vk::PhysicalDeviceVulkan12Features& vk12features = std::get<vk::PhysicalDeviceVulkan12Features>(createInfo);
 	vk12features.shaderStorageBufferArrayNonUniformIndexing = true;
@@ -27,26 +30,43 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	vk12features.shaderStorageImageArrayNonUniformIndexing = true;
 	vk12features.descriptorBindingPartiallyBound = true;
 	vk12features.shaderFloat16 = true;
-	vk12features.bufferDeviceAddress = device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+	vk12features.bufferDeviceAddress = accelerationStructure || device.EnabledExtensions().contains(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
 	vk12features.timelineSemaphore = true;
 
 	vk::PhysicalDeviceVulkan13Features& vk13features = std::get<vk::PhysicalDeviceVulkan13Features>(createInfo);
 	vk13features.dynamicRendering = true;
 	vk13features.synchronization2 = true;
 
-	vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT& atomicFloatFeatures = std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(createInfo);
-	atomicFloatFeatures.shaderBufferFloat32AtomicAdd = device.EnabledExtensions().contains(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
-
 	vk::PhysicalDevice16BitStorageFeatures& storageFeatures = std::get<vk::PhysicalDevice16BitStorageFeatures>(createInfo);
 	storageFeatures.storageBuffer16BitAccess = true;
 
-	std::get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(createInfo).accelerationStructure = device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+	if (device.EnabledExtensions().contains(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME))
+		std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(createInfo).shaderBufferFloat32AtomicAdd = true;
+	else
+		createInfo.unlink<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>();
 
-	auto& rtfeatures = std::get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(createInfo);
-	rtfeatures.rayTracingPipeline = device.EnabledExtensions().contains(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-	rtfeatures.rayTraversalPrimitiveCulling = rtfeatures.rayTracingPipeline;
+	if (accelerationStructure)
+		std::get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(createInfo).accelerationStructure = accelerationStructure;
+	else
+		createInfo.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
 
-	std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(createInfo).rayQuery = device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+	if (device.EnabledExtensions().contains(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
+		auto& rtfeatures = std::get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(createInfo);
+		rtfeatures.rayTracingPipeline = true;
+		rtfeatures.rayTraversalPrimitiveCulling = rtfeatures.rayTracingPipeline;
+	} else {
+		createInfo.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+	}
+
+	if (device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME))
+		std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(createInfo).rayQuery = device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+	else
+		createInfo.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+
+	if (device.EnabledExtensions().contains(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME))
+		std::get<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>(createInfo).fragmentShaderBarycentric = true;
+	else
+		createInfo.unlink<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>();
 }
 
 ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const vk::ArrayProxy<const std::string>& deviceExtensions) {

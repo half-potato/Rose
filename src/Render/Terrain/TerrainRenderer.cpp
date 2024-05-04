@@ -188,7 +188,7 @@ bool TerrainRenderer::CheckCompileStatus(CommandContext& context) {
 	return true;
 }
 
-void TerrainRenderer::InspectorGui(CommandContext& context) {
+void TerrainRenderer::InspectorWidget(CommandContext& context) {
 	if (ImGui::CollapsingHeader("Terrain")) {
 		ImGui::Indent();
 
@@ -236,11 +236,11 @@ void TerrainRenderer::NodeEditorWidget() {
 	heightFunction.NodeEditorGui();
 }
 
-void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) {
+void TerrainRenderer::PreRender(CommandContext& context, const RenderData& renderData) {
 	if (!drawPipeline
-		|| gbuffer.renderTarget.GetImage()->Info().format != pipelineFormat
+		|| renderData.renderTarget.GetImage()->Info().format != pipelineFormat
 		|| ImGui::IsKeyPressed(ImGuiKey_F5, false))
-		CreatePipelines(context.GetDevice(), gbuffer.renderTarget.GetImage()->Info().format);
+		CreatePipelines(context.GetDevice(), renderData.renderTarget.GetImage()->Info().format);
 
 	if (!CheckCompileStatus(context)) {
 		ImGui::OpenPopup("Compiling shaders");
@@ -258,8 +258,8 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 				const float3 wMin = octToWorld * n.GetMin();
 				const float3 wMax = octToWorld * n.GetMax();
 
-				const float4 h0 = view * float4(wMin, 1.f);
-				const float4 h1 = view * float4(wMax, 1.f);
+				const float4 h0 = renderData.view * float4(wMin, 1.f);
+				const float4 h1 = renderData.view * float4(wMax, 1.f);
 				const float3 p0 = float3(h0)/h0.w;
 				const float3 p1 = float3(h1)/h1.w;
 
@@ -350,8 +350,8 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 	// create descriptor sets for draw
 	{
 		ShaderParameter params = {};
-		params["worldToCamera"] = view;
-		params["projection"]    = projection;
+		params["worldToCamera"] = renderData.view;
+		params["projection"]    = renderData.projection;
 		params["lightDir"]      = lightDir;
 
 		descriptorSets = context.GetDescriptorSets(*drawPipeline->Layout());
@@ -360,8 +360,8 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 
 	{
 		ShaderParameter params = {};
-		params["worldToCamera"] = view;
-		params["projection"]    = projection;
+		params["worldToCamera"] = renderData.view;
+		params["projection"]    = renderData.projection;
 		params["aabbs"]         = nodeAabbsCpu;
 
 		nodeDescriptorSets = context.GetDescriptorSets(*drawNodePipeline->Layout());
@@ -369,7 +369,7 @@ void TerrainRenderer::PreRender(CommandContext& context, const GBuffer& gbuffer,
 	}
 }
 
-void TerrainRenderer::Render(CommandContext& context) {
+void TerrainRenderer::Render(CommandContext& context, const RenderData& renderData) {
 	if (drawPipeline && descriptorSets) {
 		context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***drawPipeline);
 		context.BindDescriptors(*drawPipeline->Layout(), *descriptorSets);

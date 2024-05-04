@@ -1,5 +1,5 @@
 import Render.GBuffer;
-import Render.Transform.Transform;
+import Scene.Transform;
 import Render.DualContouring.ProceduralVolume;
 
 using namespace RoseEngine;

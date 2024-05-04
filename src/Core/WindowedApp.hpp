@@ -5,6 +5,8 @@
 #include "CommandContext.hpp"
 #include "Gui.hpp"
 
+#include <functional>
+
 namespace RoseEngine {
 
 // Stores Widgets which have a callback that is called every frame.
@@ -32,7 +34,7 @@ struct WindowedApp {
 	double fps = 0;
 	std::chrono::high_resolution_clock::time_point lastFrame = {};
 
-	inline WindowedApp(std::span<const char*, std::dynamic_extent> args) {
+	inline WindowedApp(const vk::ArrayProxy<const std::string> &deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }) {
 		std::vector<std::string> instanceExtensions;
 		for (const auto& e : Window::RequiredInstanceExtensions())
 			instanceExtensions.emplace_back(e);
@@ -44,10 +46,10 @@ struct WindowedApp {
 
 		vk::raii::PhysicalDevice physicalDevice = nullptr;
 		std::tie(physicalDevice, presentQueueFamily) = Window::FindSupportedDevice(**instance);
-		device = Device::Create(*instance, physicalDevice, { VK_KHR_SWAPCHAIN_EXTENSION_NAME });
+		device = Device::Create(*instance, physicalDevice, deviceExtensions);
 
 		window    = Window::Create(*instance, "Rose", uint2(1920, 1080));
-		swapchain = Swapchain::Create(*device, *window->GetSurface());
+		swapchain = Swapchain::Create(device, *window->GetSurface());
 
 		contexts.emplace_back(CommandContext::Create(device, presentQueueFamily));
 
@@ -172,7 +174,7 @@ struct WindowedApp {
 
 	inline bool CreateSwapchain() {
 		device->Wait();
-		if (!swapchain->Recreate(*device, *window->GetSurface(), { presentQueueFamily }))
+		if (!swapchain->Recreate(*window->GetSurface(), { presentQueueFamily }))
 			return false; // Window unavailable (minimized?)
 
 		contexts.resize(swapchain->ImageCount());

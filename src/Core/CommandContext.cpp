@@ -24,15 +24,18 @@ void CommandContext::Begin() {
 	mCommandBuffer.reset();
 	mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
 
-	if (!mCache.mNewUploadBuffers.empty()) {
-		for (auto& [usage, bufs] : mCache.mNewUploadBuffers) {
-			for (auto& b : bufs)
-				if (b.second.mBuffer && b.second.mBuffer.use_count() == 1)
-					mCache.mUploadBuffers[usage].emplace_back(std::move(b));
+	if (!mCache.mNewBuffers.empty()) {
+		for (auto& [usage, bufs] : mCache.mNewBuffers) {
+			for (auto& b : bufs) {
+				// if we aren't the only owner, release it
+				if (b.buffer.mBuffer     && b.buffer.mBuffer.use_count() > 1) b.buffer = {};
+				if (b.hostBuffer.mBuffer && b.hostBuffer.mBuffer.use_count() > 1) b.hostBuffer = {};
+				mCache.mBuffers[usage].emplace_back(std::move(b));
+			}
 		}
-		mCache.mNewUploadBuffers.clear();
-		for (auto& [usage, bufs] : mCache.mUploadBuffers)
-			std::ranges::sort(bufs, [](const auto& lhs, const auto& rhs) { return lhs.first.size() < rhs.first.size(); });
+		mCache.mNewBuffers.clear();
+		for (auto& [usage, bufs] : mCache.mBuffers)
+			std::ranges::sort(bufs, {}, &CachedData::CachedBuffers::size);
 	}
 
 	if (!mCache.mNewDescriptorSets.empty()) {

@@ -21,13 +21,15 @@ struct PipelineBindings {
 	vk::ShaderStageFlags pushConstantStages = vk::ShaderStageFlags{0};
 
 	// inserts bindings in shaderBinding into pipelineBinding
-	void AddBindings(ShaderParameterBinding& pipelineBinding, const ShaderParameterBinding& shaderBinding, const vk::ShaderStageFlagBits stage, const PipelineLayoutInfo& info, uint32_t constantOffset = 0) {
+	void AddBindings(ShaderParameterBinding& pipelineBinding, const ShaderParameterBinding& shaderBinding, const vk::ShaderStageFlagBits stage, const PipelineLayoutInfo& info, uint32_t constantOffset = 0, const std::string parentName = "") {
 		for (const auto&[name, subBinding] : shaderBinding) {
 			auto it = pipelineBinding.find(name);
 			const bool hasBinding = it != pipelineBinding.end();
 			if (!hasBinding) {
 				pipelineBinding[name] = subBinding.raw_variant();  // dont include sub parameters
 			}
+
+			std::string fullName = parentName == "" ? name : (parentName + "." + name);
 
 			uint32_t offset = constantOffset;
 
@@ -77,12 +79,12 @@ struct PipelineBindings {
 
 				// get binding flags from layout info
 				std::optional<vk::DescriptorBindingFlags> flags;
-				if (auto b_it = info.descriptorBindingFlags.find(name); b_it != info.descriptorBindingFlags.end())
+				if (auto b_it = info.descriptorBindingFlags.find(fullName); b_it != info.descriptorBindingFlags.end())
 					flags = b_it->second;
 
 				// get immutable samplers from layout info
 				std::vector<vk::Sampler> samplers;
-				if (auto s_it = info.immutableSamplers.find(name); s_it != info.immutableSamplers.end()) {
+				if (auto s_it = info.immutableSamplers.find(fullName); s_it != info.immutableSamplers.end()) {
 					samplers.resize(s_it->second.size());
 					std::ranges::transform(s_it->second, samplers.begin(), [](const ref<vk::raii::Sampler>& s){ return **s; });
 				}
@@ -110,7 +112,7 @@ struct PipelineBindings {
 				}
 			}
 
-			AddBindings(pipelineBinding[name], subBinding, stage, info, offset);
+			AddBindings(pipelineBinding[name], subBinding, stage, info, offset, fullName);
 		}
 	};
 };

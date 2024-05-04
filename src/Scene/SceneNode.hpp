@@ -1,10 +1,11 @@
 #pragma once
 
 #include <optional>
+#include <memory>
 
 #include "Mesh.hpp"
-#include "Material.h"
-#include <Render/Transform/Transform.h>
+#include "SceneTypes.h"
+#include "Transform.hpp"
 
 namespace RoseEngine {
 

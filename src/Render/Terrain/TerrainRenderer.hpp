@@ -50,9 +50,9 @@ private:
 public:
 	~TerrainRenderer();
 	void Initialize(CommandContext& context) override;
-	void PreRender(CommandContext& context, const GBuffer& gbuffer, const Transform& view, const Transform& projection) override;
-	void Render(CommandContext& context) override;
-	void InspectorGui(CommandContext& context) override;
+	void InspectorWidget(CommandContext& context) override;
+	void PreRender(CommandContext& context, const RenderData& renderData) override;
+	void Render(CommandContext& context, const RenderData& renderData) override;
 	void NodeEditorWidget();
 };
 

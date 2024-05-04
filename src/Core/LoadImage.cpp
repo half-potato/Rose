@@ -1,4 +1,5 @@
 #include "Image.hpp"
+#include "CommandContext.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -53,7 +54,7 @@ inline vk::Format dxgiToVulkan(tinyddsloader::DDSFile::DXGIFormat format, const 
 	}
 }
 
-PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, const bool srgb, int desiredChannels) {
+PixelData LoadImageFile(CommandContext& context, const std::filesystem::path& filename, const bool srgb, int desiredChannels) {
 	if (!std::filesystem::exists(filename))
 		throw std::invalid_argument("File does not exist: " + filename.string());
 	if (filename.extension() == ".exr") {
@@ -67,7 +68,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 			FreeEXRErrorMessage(err);
 			throw std::runtime_error(std::string("Failure when loading image: ") + filename.string());
 		}
-		auto buf = Buffer::Create(device, std::span{ pixels, size_t(width)*size_t(height)*4 });
+		auto buf = context.UploadData(std::span{ pixels, size_t(width)*size_t(height)*4 });
 		std::free(pixels);
 		return PixelData{buf, vk::Format::eR32G32B32A32Sfloat, uint3(width, height, 1)};
 	} else if (filename.extension() == ".dds") {
@@ -81,7 +82,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 
 		const DDSFile::ImageData* img = dds.GetImageData(0, 0);
 
-		auto buf = Buffer::Create(device, std::span{ (std::byte*)img->m_mem, img->m_memSlicePitch });
+		auto buf = context.UploadData(std::span{ (std::byte*)img->m_mem, img->m_memSlicePitch });
 		return PixelData{buf, dxgiToVulkan(dds.GetFormat(), desiredChannels == 4), uint3(dds.GetWidth(), dds.GetHeight(), dds.GetDepth())};
 	} else {
 		int x,y,channels;
@@ -120,7 +121,7 @@ PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, c
 		std::cout << "Loaded " << filename << " (" << x << "x" << y << ")" << std::endl;
 		if (desiredChannels) channels = desiredChannels;
 
-		auto buf = Buffer::Create(device, std::span{ pixels, size_t(x)*size_t(y)*GetTexelSize(format) });
+		auto buf = context.UploadData(std::span{ pixels, size_t(x)*size_t(y)*GetTexelSize(format) });
 		stbi_image_free(pixels);
 		return PixelData{buf, format, uint3(x,y,1)};
 	}

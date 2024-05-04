@@ -16,7 +16,7 @@ void Mesh::Bind(CommandContext& context, const MeshLayout& layout) const {
 	}
 
 	if (indexBuffer)
-		context->bindIndexBuffer(**indexBuffer.mBuffer, indexBuffer.mOffset, indexType);
+		context->bindIndexBuffer(**indexBuffer.mBuffer, indexBuffer.mOffset, IndexType());
 }
 
 struct stride_view_hash {
@@ -82,7 +82,6 @@ void ReflectVertexInputs(const ShaderParameterBinding& binding, const Mesh& mesh
 MeshLayout Mesh::GetLayout(const ShaderModule& vertexShader) const {
 	MeshLayout layout {
 		.topology = topology,
-		.indexType = indexType,
 		.hasIndices = indexBuffer };
 
 	BufferBindingMap uniqueBuffers = {};

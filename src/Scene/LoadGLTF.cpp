@@ -1,13 +1,12 @@
-#include "LoadGLTF.hpp"
-
-#include <Core/Math.h>
-#include "Mesh.hpp"
 #include <iostream>
+#include <Core/Math.h>
 
 #define TINYGLTF_USE_CPP14
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #define TINYGLTF_IMPLEMENTATION
 #include <tiny_gltf.h>
+
+#include "LoadGLTF.hpp"
 
 namespace RoseEngine {
 
@@ -94,34 +93,39 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 	std::cout << "Loading materials..." << std::endl;
 	std::ranges::transform(model.materials, materials.begin(), [&](const tinygltf::Material& material) {
 		Material<ImageView> m;
-		m.roughness = (float)material.pbrMetallicRoughness.roughnessFactor;
-		m.metallic  = (float)material.pbrMetallicRoughness.metallicFactor;
-		m.ior = 1.5f;
-		m.transmission = 0;
-		m.clearcoat = 0;
-		m.specular = .5f;
-		m.emission = (float3)double3(material.emissiveFactor[0], material.emissiveFactor[1], material.emissiveFactor[2]);
 		m.emissionImage     = GetImage(material.emissiveTexture.index, true);
 		m.baseColorImage    = GetImage(material.pbrMetallicRoughness.baseColorTexture.index, true);
 		m.metallicRoughness = GetImage(material.pbrMetallicRoughness.metallicRoughnessTexture.index, false);
 		m.bumpMap           = GetImage(material.normalTexture.index, false);
+		m.SetBaseColor((float3)double3(material.pbrMetallicRoughness.baseColorFactor[0], material.pbrMetallicRoughness.baseColorFactor[1], material.pbrMetallicRoughness.baseColorFactor[2]));
+		m.SetAlphaCutoff((float)material.alphaCutoff);
+		m.SetRoughness((float)material.pbrMetallicRoughness.roughnessFactor);
+		m.SetMetallic ((float)material.pbrMetallicRoughness.metallicFactor);
+		m.SetIor(1.5f);
+		m.SetTransmission(0);
+		m.SetClearcoat(0);
+		m.SetSpecular(.5f);
+		if      (material.alphaMode == "MASK")  m.SetFlags(MaterialFlags::eAlphaCutoff);
+		else if (material.alphaMode == "BLEND") m.SetFlags(MaterialFlags::eAlphaBlend);
+		if (material.doubleSided) m.SetFlags((MaterialFlags)(m.GetFlags() | (uint)MaterialFlags::eDoubleSided));
+
+		float3 emission = (float3)double3(material.emissiveFactor[0], material.emissiveFactor[1], material.emissiveFactor[2]);
+
+		if (material.extensions.contains("KHR_materials_ior"))          m.SetIor(          (float)material.extensions.at("KHR_materials_ior").Get("ior").GetNumberAsDouble() );
+		if (material.extensions.contains("KHR_materials_transmission")) m.SetTransmission( (float)material.extensions.at("KHR_materials_transmission").Get("transmissionFactor").GetNumberAsDouble() );
+		if (material.extensions.contains("KHR_materials_clearcoat"))    m.SetClearcoat(    (float)material.extensions.at("KHR_materials_clearcoat").Get("clearcoatFactor").GetNumberAsDouble() );
 
 		if (material.extensions.find("KHR_materials_emissive_strength") != material.extensions.end())
-			m.emission *= (float)material.extensions.at("KHR_materials_emissive_strength").Get("emissiveStrength").GetNumberAsDouble();
-		if (material.extensions.contains("KHR_materials_ior"))
-			m.ior = (float)material.extensions.at("KHR_materials_ior").Get("ior").GetNumberAsDouble();
-		if (material.extensions.contains("KHR_materials_transmission"))
-			m.transmission = (float)material.extensions.at("KHR_materials_transmission").Get("transmissionFactor").GetNumberAsDouble();
-		if (material.extensions.contains("KHR_materials_clearcoat"))
-			m.clearcoat = (float)material.extensions.at("KHR_materials_clearcoat").Get("clearcoatFactor").GetNumberAsDouble();
+			emission *= (float)material.extensions.at("KHR_materials_emissive_strength").Get("emissiveStrength").GetNumberAsDouble();
+		m.SetEmission(emission);
 
 		if (material.extensions.contains("KHR_materials_specular")) {
 			const auto& v = material.extensions.at("KHR_materials_specular");
 			if (v.Has("specularColorFactor")) {
 				auto& a = v.Get("specularColorFactor");
-				m.specular = luminance((float3)double3(a.Get(0).GetNumberAsDouble(), a.Get(1).GetNumberAsDouble(), a.Get(2).GetNumberAsDouble()));
+				m.SetSpecular( luminance((float3)double3(a.Get(0).GetNumberAsDouble(), a.Get(1).GetNumberAsDouble(), a.Get(2).GetNumberAsDouble())) );
 			} else if (v.Has("specularFactor")) {
-				m.specular = (float)v.Get("specularFactor").GetNumberAsDouble();
+				m.SetSpecular( (float)v.Get("specularFactor").GetNumberAsDouble() );
 			}
 		}
 
@@ -140,7 +144,7 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 
 			Mesh mesh = {};
 			mesh.indexBuffer = buffers[indexBufferView.buffer].slice(indexBufferView.byteOffset + indicesAccessor.byteOffset, indicesAccessor.count * indexStride);
-			mesh.indexType = indexStride == sizeof(uint16_t) ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
+			mesh.indexSize = indexStride;
 			switch (prim.mode) {
 				case TINYGLTF_MODE_POINTS: 			mesh.topology = vk::PrimitiveTopology::ePointList; break;
 				case TINYGLTF_MODE_LINE: 			mesh.topology = vk::PrimitiveTopology::eLineList; break;
@@ -303,8 +307,8 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 				const float r = l.extras.Has("radius") ? (float)l.extras.Get("radius").GetNumberAsDouble() : 1e-4;
 
 				Material<ImageView> m = {};
-				m.baseColor = float3(0);
-				m.emission = (float3)(double3(l.color[0], l.color[1], l.color[2]) * (l.intensity / (4*M_PI*r*r)));
+				m.SetBaseColor( float3(0) );
+				m.SetEmission( (float3)(double3(l.color[0], l.color[1], l.color[2]) * (l.intensity / (4*M_PI*r*r))) );
 
 				auto lightNode = SceneNode::Create("PointLight");
 				lightNode->mesh = sphereMesh;

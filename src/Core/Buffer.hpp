@@ -150,7 +150,7 @@ inline BufferRange<std::ranges::range_value_t<R>> Buffer::Create(
 	const vk::MemoryPropertyFlags  memoryFlags,
 	const VmaAllocationCreateFlags allocationFlags ) {
 
-	const size_t size = data.size() * sizeof(std::ranges::range_value_t<R>);
+	const size_t size = std::ranges::size(data) * sizeof(std::ranges::range_value_t<R>);
 
 	BufferView buf = Buffer::Create(
 		device,
@@ -159,7 +159,7 @@ inline BufferRange<std::ranges::range_value_t<R>> Buffer::Create(
 		memoryFlags,
 		allocationFlags);
 
-	std::memcpy(buf.data(), data.data(), size);
+	std::memcpy(buf.data(), std::ranges::data(data), size);
 
 	return buf;
 }

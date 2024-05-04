@@ -4,7 +4,7 @@
 #include <Core/Window.hpp>
 #include <Core/CommandContext.hpp>
 
-#include <Render/Scene/Mesh.hpp>
+#include <Scene/Mesh.hpp>
 
 using namespace RoseEngine;
 
@@ -36,7 +36,7 @@ public:
 		device = Device::Create(*instance, physicalDevice, { VK_KHR_SWAPCHAIN_EXTENSION_NAME });
 
 		window    = Window::Create(*instance, "Rose", uint2(1920, 1080));
-		swapchain = Swapchain::Create(*device, *window->GetSurface());
+		swapchain = Swapchain::Create(device, *window->GetSurface());
 		context   = CommandContext::Create(device, presentQueueFamily);
 
 		commandSignalSemaphore = vk::raii::Semaphore(**device, vk::SemaphoreCreateInfo{});
@@ -45,7 +45,7 @@ public:
 
 		mesh = Mesh {
 			.indexBuffer = context->UploadData(std::vector<uint16_t>{ 0, 1, 2, 1, 3, 2 }, vk::BufferUsageFlagBits::eIndexBuffer),
-			.indexType = vk::IndexType::eUint16,
+			.indexSize = sizeof(uint16_t),
 			.topology = vk::PrimitiveTopology::eTriangleList };
 		mesh.vertexAttributes[MeshVertexAttributeType::ePosition].emplace_back(
 			context->UploadData(std::vector<float3>{
@@ -77,7 +77,7 @@ public:
 
 	inline bool CreateSwapchain() {
 		device->Wait();
-		if (!swapchain->Recreate(*device, *window->GetSurface(), { presentQueueFamily }))
+		if (!swapchain->Recreate(*window->GetSurface(), { presentQueueFamily }))
 			return false; // Window unavailable (minimized?)
 
 		ref<const ShaderModule> vertexShader, fragmentShader;

@@ -39,22 +39,20 @@ include_directories(src)
 link_libraries(Vulkan::Vulkan)
 link_libraries(glm)
 
-
-file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
+file(GLOB_RECURSE CORE_SRCS   "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
 file(GLOB_RECURSE RENDER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Render/**.cpp")
+file(GLOB_RECURSE SCENE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Scene/**.cpp")
 file(GLOB IMGUI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
 add_library(RoseLib
 	${CORE_SRCS}
 	${RENDER_SRCS}
-	thirdparty/miniz.c
-	thirdparty/pugixml.cpp
+	${SCENE_SRCS}
 	${IMGUI_SRCS}
 	thirdparty/ImGuizmo.cpp
-	thirdparty/imnodes.cpp)
+	thirdparty/imnodes.cpp
+	thirdparty/miniz.c
+	thirdparty/pugixml.cpp)
 set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
-
-add_executable(Rose src/main.cpp)
-target_link_libraries(Rose RoseLib)
 
 target_link_libraries(RoseLib glfw)
 target_include_directories(RoseLib PRIVATE thirdparty/glfw/include thirdparty/glfw/deps)
@@ -97,6 +95,8 @@ endif()
 
 configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
 
+add_executable(Rose src/main.cpp)
+target_link_libraries(Rose PRIVATE RoseLib)
 
 enable_testing()
 

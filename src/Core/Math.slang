@@ -25,3 +25,28 @@ static const float M_SQRTPI            = 1.77245385090551602730;   // sqrt(pi)
 static const float M_1_SQRT2           = 0.707106781186547524401;  // 1/sqrt(2)
 
 #include "Math.h"
+
+float2x2 inverse(float2x2 m) {
+	const float invdet = 1 / determinant(m);
+    float2x2 r;
+    r[0][0]  = m[1][1] * invdet;
+    r[1][1]  = m[0][0] * invdet;
+    r[0][1] = -m[0][1] * invdet;
+    r[1][0] = -m[1][0] * invdet;
+    return r;
+}
+
+float3x3 inverse(float3x3 m) {
+	float invdet = 1 / determinant(m);
+    float3x3 r;
+    r[0][0] = (m[1][1] * m[2][2] - m[2][1] * m[1][2]) * invdet;
+    r[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * invdet;
+    r[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * invdet;
+    r[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * invdet;
+    r[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * invdet;
+    r[1][2] = (m[1][0] * m[0][2] - m[0][0] * m[1][2]) * invdet;
+    r[2][0] = (m[1][0] * m[2][1] - m[2][0] * m[1][1]) * invdet;
+    r[2][1] = (m[2][0] * m[0][1] - m[0][0] * m[2][1]) * invdet;
+    r[2][2] = (m[0][0] * m[1][1] - m[1][0] * m[0][1]) * invdet;
+    return r;
+}

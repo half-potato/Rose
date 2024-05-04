@@ -344,7 +344,8 @@ struct PixelData {
 	vk::Format format   = {};
 	uint3 extent = {};
 };
-PixelData LoadImageFile(Device& device, const std::filesystem::path& filename, const bool srgb = true, int desiredChannels = 0);
+class CommandContext;
+PixelData LoadImageFile(CommandContext& context, const std::filesystem::path& filename, const bool srgb = true, int desiredChannels = 0);
 
 struct ImageInfo {
 	vk::ImageCreateFlags    createFlags   = {};

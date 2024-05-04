@@ -79,6 +79,7 @@ Image::~Image() {
 }
 
 ImageView ImageView::Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type, const vk::ComponentMapping& componentMapping) {
+	if (!image) return {};
 	auto key = std::tie(subresource, type, componentMapping);
 	auto it = image->mCachedViews.find(key);
 	if (it == image->mCachedViews.end()) {
