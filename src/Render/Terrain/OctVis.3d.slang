@@ -10,9 +10,10 @@ uniform Transform worldToCamera;
 uniform Transform projection;
 
 [shader("vertex")]
-float4 vertexMain(uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID) : SV_Position {
-    const float3 aabbMin = aabbs.Load<float3>(instanceId * sizeof(float3) * 2);
-    const float3 aabbMax = aabbs.Load<float3>(instanceId * sizeof(float3) * 2 + sizeof(float3));
+float4 vertexMain(uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID, out float3 color : COLOR0) : SV_Position {
+    const uint address = instanceId * (sizeof(float3) * 3);
+    const float3 aabbMin = aabbs.Load<float3>(address);
+    const float3 aabbMax = aabbs.Load<float3>(address + sizeof(float3));
 
     uint indices[] = {
 		// bottom
@@ -35,15 +36,17 @@ float4 vertexMain(uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID) : 
     };
     const uint v = indices[vertexId];
 
-    float4 clip = projection * worldToCamera * float4(lerp(aabbMin, aabbMax, float3(v&1, (v>>1)&1, (v>>2)&1)), 1);
+    color = aabbs.Load<float3>(address + sizeof(float3) * 2);
+
+    float4 clip = (projection * worldToCamera).ProjectPointUnnormalized( lerp(aabbMin, aabbMax, float3(v & 1, (v >> 1) & 1, (v >> 2) & 1)) );
     clip.y = -clip.y;
     return clip;
 }
 
 [shader("fragment")]
-GBuffer fragmentMain() {
+GBuffer fragmentMain(float3 color: COLOR0) {
     GBuffer o = {};
-    o.color = float4(1, 0, 1, 1);
+    o.color = float4(color, 1);
     o.visibility = uint4(0, 0, 0, 0);
     return o;
 }

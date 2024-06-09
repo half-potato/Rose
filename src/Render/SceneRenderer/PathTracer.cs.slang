@@ -67,44 +67,43 @@ bool SampleLight(inout RandomSampler rng, const Scene::Vertex vertex, out float3
     RayDesc ray = {};
     ray.Origin = vertex.position;
     ray.Direction = dir;
-    ray.TMin = 1e-6;
+    ray.TMin = 1e-4;
     ray.TMax = 1e9;
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> rq;
     rq.TraceRayInline(scene.accelerationStructure, 0, 1, ray);
-    while (rq.Proceed()) {}
+    rq.Proceed();
     return rq.CommittedStatus() == COMMITTED_NOTHING;
-}
-
-float3 Evaluate(int2 id, uint4 hit) {
-    Scene::Vertex vertex;
-    Material material;
-    if (!LoadHit(hit, vertex, material)) {
-        float3 bg = scene.backgroundColor;
-        if (scene.backgroundImage < scene.imageCount) {
-            const float2 clip = 2 * (id + .5) / float2(imageSize) - 1;
-            const float3 dir = ((cameraToWorld * float4(normalize(inverseProjection * float3(clip.x, -clip.y, 1)), 0)).xyz);
-            bg *= scene.SampleImageUniform(scene.backgroundImage, xyz2sph(dir)).rgb;
-        }
-        return bg;
-	}
-
-    RandomSampler rng = RandomSampler(seed, id);
-
-    float3 le = material.GetEmission();
-
-    float3 lightColor;
-    float3 lightDir;
-    float pdf;
-    if (SampleLight(rng, vertex, lightColor, pdf, lightDir))
-        le += material.GetBaseColor() * abs(dot(vertex.shadingNormal, lightDir)) * lightColor / pdf;
-
-    return le;
 }
 
 [shader("compute")]
 [numthreads(8,4,1)]
 void main(uint3 index: SV_DispatchThreadID) {
     if (any(index.xy >= imageSize)) return;
-    const float3 r = Evaluate(index.xy, visibility[index.xy]);
-    renderTarget[index.xy] = float4(r, 1);
+
+    uint4 hit = visibility[index.xy];
+
+    float3 le = 0;
+
+    Scene::Vertex vertex;
+    Material material;
+    if (LoadHit(hit, vertex, material)) {
+		RandomSampler rng = RandomSampler(seed, index.xy);
+
+		le = material.GetEmission();
+
+		float3 lightColor;
+		float3 lightDir;
+		float pdf;
+		if (SampleLight(rng, vertex, lightColor, pdf, lightDir))
+			le += material.GetBaseColor() * abs(dot(vertex.shadingNormal, lightDir)) * lightColor / pdf;
+    } else {
+        le = scene.backgroundColor;
+        if (scene.backgroundImage < scene.imageCount) {
+            const float2 clip = 2 * (index.xy + .5) / float2(imageSize) - 1;
+            const float3 dir = normalize(cameraToWorld.TransformVector(inverseProjection.ProjectPoint(float3(clip.x, -clip.y, 1))));
+            le *= scene.SampleImageUniform(scene.backgroundImage, xyz2sph(dir)).rgb;
+        }
+    }
+
+    renderTarget[index.xy] = float4(le, 1);
 }

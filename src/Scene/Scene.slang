@@ -108,8 +108,8 @@ struct Scene {
         bool hasTexcoords = mesh.texcoords.bufferIndex < meshBufferCount;
 
         LoadTriangleAttribute(mesh.positions, tri, v0, v1, v2);
-        if (hasNormals)   { LoadTriangleAttribute(mesh.normals, tri, n0, n1, n2); hasNormals = true; }
-        if (hasTexcoords) { LoadTriangleAttribute(mesh.texcoords, tri, t0, t1, t2); hasTexcoords = true; }
+        if (hasNormals)   LoadTriangleAttribute(mesh.normals, tri, n0, n1, n2);
+        if (hasTexcoords) LoadTriangleAttribute(mesh.texcoords, tri, t0, t1, t2);
 
         const float3 dPds = v1 - v0;
         const float3 dPdt = v2 - v0;
@@ -119,7 +119,11 @@ struct Scene {
         v.faceNormal = normalize(cross(dPds, dPdt));
 
         if (hasNormals) {
-			v.shadingNormal = n0 + (n1 - n0) * bary.x + (n2 - n0) * bary.y;
+            v.shadingNormal = n0 + (n1 - n0) * bary.x + (n2 - n0) * bary.y;
+			hasNormals = any(v.shadingNormal != 0) && all(v.shadingNormal == v.shadingNormal);
+        }
+
+        if (hasNormals) {
 			v.shadingNormal = normalize(v.shadingNormal);
 
 			// make face normal agree with shading normals
@@ -150,11 +154,11 @@ struct Scene {
 
     Vertex TransformVertex(InstanceHeader instance, const Vertex vertex) {
         Vertex v = vertex;
-        v.position = transforms[instance.transformIndex] * v.position;
-        const Transform t = transpose(inverseTransforms[instance.transformIndex]);
-        v.faceNormal    = normalize( t * v.faceNormal );
-        v.shadingNormal = normalize( t * v.shadingNormal );
-        v.tangent.xyz   = normalize( t * v.tangent.xyz );
+        v.position = transforms[instance.transformIndex].TransformPoint(v.position);
+        const Transform nt = transpose(inverseTransforms[instance.transformIndex]);
+        v.faceNormal    = normalize(nt.TransformVector(v.faceNormal));
+        v.shadingNormal = normalize(nt.TransformVector(v.shadingNormal));
+        v.tangent.xyz   = normalize(nt.TransformVector(v.tangent.xyz));
         return v;
 	}
 };

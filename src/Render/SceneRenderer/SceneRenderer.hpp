@@ -9,7 +9,7 @@ namespace RoseEngine {
 
 ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& filename);
 
-class SceneRenderer : public IRenderer {
+class SceneRenderer {
 private:
 	struct CachedPipeline {
 		ref<Pipeline> pipeline = {};
@@ -116,6 +116,8 @@ private:
 	}
 
 public:
+	inline void Initialize(CommandContext& context) {}
+	inline void InspectorWidget(CommandContext& context) {}
 
 	inline const ref<SceneNode>& GetScene() const { return scene; }
 	inline const ImageView& GetBackgroundImage() const { return backgroundImage; }
@@ -130,7 +132,7 @@ public:
 	inline void SetBackgroundImage(const ImageView& v) { backgroundImage = v; SetDirty(); }
 	inline void SetBackgroundColor(const float3& v) { backgroundColor = v; SetDirty(); }
 
-	inline void PreRender(CommandContext& context, const RenderData& renderData) override {
+	inline void PreRender(CommandContext& context, const RenderData& renderData) {
 		if (!scene) return;
 
 		if (updateScene) {
@@ -155,7 +157,7 @@ public:
 				todo.pop();
 
 				if (n->mesh && n->material) {
-					const auto& [meshLayout_Flags, cachedPipeline] = GetPipeline(context.GetDevice(), renderData.renderTarget.GetImage()->Info().format, *n->mesh, *n->material);
+					const auto& [meshLayout_Flags, cachedPipeline] = GetPipeline(context.GetDevice(), renderData.gbuffer.renderTarget.GetImage()->Info().format, *n->mesh, *n->material);
 					auto&[meshLayout_, meshes] = renderables[cachedPipeline.pipeline.get()];
 					meshLayout_ = meshLayout_Flags.first;
 					meshes[n->mesh.get()][n->material.get()].emplace_back(std::pair{n, t});
@@ -275,7 +277,7 @@ public:
 
 		ShaderParameter params = {};
 		params["scene"]         = sceneParameters;
-		params["worldToCamera"] = renderData.view;
+		params["worldToCamera"] = renderData.worldToCamera;
 		params["projection"]    = renderData.projection;
 
 		// all pipelines should have the same descriptor set layouts
@@ -283,7 +285,7 @@ public:
 		context.UpdateDescriptorSets(*descriptorSets, params, *cachedPipelines.begin()->second.pipeline->Layout());
 	}
 
-	inline void Render(CommandContext& context, const RenderData& renderData) override {
+	inline void Render(CommandContext& context, const RenderData& renderData) {
 		const Pipeline* p = nullptr;
 		for (const auto& drawList : drawLists) {
 			for (const auto&[pipeline, mesh, meshLayout, draws] : drawList) {
@@ -303,7 +305,7 @@ public:
 		}
 	}
 
-	inline void PostRender(CommandContext& context, const RenderData& renderData) override {
+	inline void PostRender(CommandContext& context, const RenderData& renderData) {
 		if (!scene || drawLists.empty()) return;
 		if (!pathTracer || (ImGui::IsKeyPressed(ImGuiKey_F5, false) && pathTracer->GetShader()->IsStale())) {
 			if (pathTracer) context.GetDevice().Wait();
@@ -316,15 +318,15 @@ public:
 		}
 		ShaderParameter params = {};
 		params["scene"] = sceneParameters;
-		params["renderTarget"] = ImageParameter{.image = renderData.renderTarget, .imageLayout = vk::ImageLayout::eGeneral };
-		params["visibility"]   = ImageParameter{.image = renderData.visibility, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-		params["worldToCamera"] = renderData.view;
+		params["renderTarget"] = ImageParameter{.image = renderData.gbuffer.renderTarget, .imageLayout = vk::ImageLayout::eGeneral };
+		params["visibility"]   = ImageParameter{.image = renderData.gbuffer.visibility  , .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		params["worldToCamera"] = renderData.worldToCamera;
+		params["cameraToWorld"] = renderData.cameraToWorld;
 		params["projection"]    = renderData.projection;
-		params["cameraToWorld"] = inverse(renderData.view);
 		params["inverseProjection"] = inverse(renderData.projection);
-		params["imageSize"] = uint2(renderData.renderTarget.Extent());
+		params["imageSize"] = uint2(renderData.gbuffer.renderTarget.Extent());
 		params["seed"] = (uint32_t)context.GetDevice().NextTimelineSignal();
-		context.Dispatch(*pathTracer, renderData.renderTarget.Extent(), params);
+		context.Dispatch(*pathTracer, renderData.gbuffer.renderTarget.Extent(), params);
 	}
 };
 

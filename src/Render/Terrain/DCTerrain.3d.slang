@@ -13,7 +13,7 @@ uniform ProceduralVolume volume;
 float4 vertexMain(in float3 vertex: POSITION, out float3 pos: TEXCOORD0) : SV_Position {
     pos = vertex;
 
-    float4 clip = projection * worldToCamera * float4(vertex, 1);
+    float4 clip = (projection * worldToCamera).ProjectPointUnnormalized(vertex);
     clip.y = -clip.y;
     return clip;
 }

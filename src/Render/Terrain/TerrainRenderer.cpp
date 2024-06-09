@@ -1,5 +1,6 @@
 #include "TerrainRenderer.hpp"
 #include <Core/Gui.hpp>
+#include <Core/Math.h>
 #include <Render/Procedural/MathNode.hpp>
 #include <portable-file-dialogs.h>
 #include <iostream>
@@ -209,14 +210,15 @@ void TerrainRenderer::InspectorWidget(CommandContext& context) {
 		}
 
 		if (ImGui::CollapsingHeader("Rendering")) {
+			ImGui::Text("%u triangles", triangleCount);
 			ImGui::DragFloat("LoD split factor", &splitFactor, .1f);
 			ImGui::DragScalar("Max depth", ImGuiDataType_U32, &maxDepth, 0.1f);
 
 			if (ImGui::Checkbox("Wire", &wire))
 				pipelineFormat = vk::Format::eUndefined;
-			ImGui::SameLine();
 			if (ImGui::Checkbox("Show backfaces", &showBackfaces))
 				pipelineFormat = vk::Format::eUndefined;
+			ImGui::Checkbox("Show node AABBs", &drawNodeBoxes);
 
 			if (ImGui::DragFloat3("Light dir", &lightDir.x, 0.025f))
 				lightDir = normalize(lightDir);
@@ -238,68 +240,90 @@ void TerrainRenderer::NodeEditorWidget() {
 
 void TerrainRenderer::PreRender(CommandContext& context, const RenderData& renderData) {
 	if (!drawPipeline
-		|| renderData.renderTarget.GetImage()->Info().format != pipelineFormat
+		|| renderData.gbuffer.renderTarget.GetImage()->Info().format != pipelineFormat
 		|| ImGui::IsKeyPressed(ImGuiKey_F5, false))
-		CreatePipelines(context.GetDevice(), renderData.renderTarget.GetImage()->Info().format);
+		CreatePipelines(context.GetDevice(), renderData.gbuffer.renderTarget.GetImage()->Info().format);
 
 	if (!CheckCompileStatus(context)) {
 		ImGui::OpenPopup("Compiling shaders");
 		return;
 	}
 
-	std::vector<float3> nodeAabbsCpu;
-
-	// generate terrain mesh
+	// calculate lod
 	{
-		{
-			std::unordered_set<OctreeNode::NodeId> toMerge;
-			const Transform octToWorld = Transform::Scale(float3(2*scale)) * Transform::Translate(float3(-.5f));
-			octreeRoot.Enumerate([&](OctreeNode& n) {
-				const float3 wMin = octToWorld * n.GetMin();
-				const float3 wMax = octToWorld * n.GetMax();
+		std::vector<float3> nodeAabbsCpu;
 
-				const float4 h0 = renderData.view * float4(wMin, 1.f);
-				const float4 h1 = renderData.view * float4(wMax, 1.f);
-				const float3 p0 = float3(h0)/h0.w;
-				const float3 p1 = float3(h1)/h1.w;
+		std::unordered_set<OctreeNode::NodeId> toMerge;
+		const float3 cameraPos = renderData.cameraToWorld.TransformPoint(float3(0));
+		const Transform octToWorld = Transform::Scale(float3(2*scale)) * Transform::Translate(float3(-.5f));
+		octreeRoot.Enumerate([&](OctreeNode& n) {
+			const float3 nodeMin = octToWorld.TransformPoint(n.GetMin());
+			const float3 nodeMax = octToWorld.TransformPoint(n.GetMax());
 
-				float3 localMin(FLT_MAX);
-				float3 localMax(FLT_MIN);
-				for (uint i = 0; i < 8; i++) {
-					const float3 p = lerp(p0, p1, float3(i&1, (i>>1)&1, (i>>2)&1));
-					localMin = glm::min(localMin, p);
-					localMax = glm::max(localMax, p);
+			const bool containsCamera = glm::all(glm::greaterThan(cameraPos, nodeMin)) && glm::all(glm::lessThan(cameraPos, nodeMax));
+			const float3 toCamera = cameraPos - glm::min(glm::max(cameraPos, nodeMin), nodeMax);
+
+			bool shouldSplit = containsCamera || length(nodeMax - nodeMin)/length(toCamera) > splitFactor;
+
+			auto meshIt = octreeMeshes.find(n.GetId());
+			if (shouldSplit && n.IsLeaf() && meshIt != octreeMeshes.end()) {
+				// always join empty nodes
+				const auto& [mesh, dirty] = meshIt->second;
+				if (!dirty && context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady && mesh.drawIndirectArgsCpu[0].indexCount == 0) {
+					shouldSplit = false;
 				}
-				const bool containsCamera =
-					(localMin.x < 0 && localMin.y < 0 && localMin.z < 0) &&
-					(localMax.x > 0 && localMax.y > 0 && localMax.z > 0);
-				const bool shouldSplit = containsCamera || length(localMax - localMin) > splitFactor*max(abs(localMax.z), abs(localMin.z));
+			}
 
-				if (shouldSplit && n.IsLeaf() && n.GetId().depth < maxDepth) {
-					// destroy leaf data for node
-					if (auto it = octreeMeshes.find(n.GetId()); it != octreeMeshes.end()) {
+			if (shouldSplit && n.IsLeaf() && n.GetId().depth < maxDepth) {
+				// destroy node's mesh
+				if (meshIt != octreeMeshes.end()) {
+					cachedMeshes.push(meshIt->second.first, context.GetDevice().NextTimelineSignal());
+					octreeMeshes.erase(meshIt);
+				}
+				// create child nodes
+				n.Split();
+			} else if (!n.IsLeaf() && (!shouldSplit || n.GetId().depth >= maxDepth)) {
+				// destroy node's mesh
+				if (meshIt != octreeMeshes.end()) {
+					cachedMeshes.push(meshIt->second.first, context.GetDevice().NextTimelineSignal());
+					octreeMeshes.erase(meshIt);
+				}
+				// destroy leaf meshes under node
+				n.Enumerate([&](auto& l) {
+					if (auto it = octreeMeshes.find(l.GetId()); it != octreeMeshes.end()) {
 						cachedMeshes.push(it->second.first, context.GetDevice().NextTimelineSignal());
 						octreeMeshes.erase(it);
 					}
-					n.Split();
-				} else if (!shouldSplit && !n.IsLeaf() || n.GetId().depth > maxDepth) {
-					// destroy leaf data under node
-					n.Enumerate([&](auto& l) {
-						if (auto it = octreeMeshes.find(l.GetId()); it != octreeMeshes.end()) {
-							cachedMeshes.push(it->second.first, context.GetDevice().NextTimelineSignal());
-							octreeMeshes.erase(it);
-						}
-					});
-					n.Join();
-				}
+				});
+				// destroy child nodes
+				n.Join();
+			}
 
-				if (n.IsLeaf()) {
-					nodeAabbsCpu.emplace_back(wMin);
-					nodeAabbsCpu.emplace_back(wMax);
+			if (n.IsLeaf() && drawNodeBoxes) {
+				if (auto it = octreeMeshes.find(n.GetId()); it != octreeMeshes.end()) {
+					const auto& [mesh, dirty] = it->second;
+					if (context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady && mesh.drawIndirectArgsCpu[0].indexCount == 0)
+						return;
 				}
-			});
+				nodeAabbsCpu.emplace_back(nodeMin);
+				nodeAabbsCpu.emplace_back(nodeMax);
+				nodeAabbsCpu.emplace_back(viridis(saturate(n.GetId().depth/max(1.f,float(maxDepth)))));
+			}
+		});
+
+		if (drawNodeBoxes) {
+			ShaderParameter params = {};
+			params["projection"]    = renderData.projection;
+			params["worldToCamera"] = renderData.worldToCamera;
+			params["aabbs"]         = nodeAabbsCpu;
+
+			nodeDescriptorSets = context.GetDescriptorSets(*drawNodePipeline->Layout());
+			context.UpdateDescriptorSets(*nodeDescriptorSets, params, *drawNodePipeline->Layout());
 		}
+	}
 
+	// generate terrain mesh
+	{
 		auto generateMesh = [&](auto& mesh, const float3 cellMin, const float3 cellMax) {
 			mesher->GenerateMesh(context, mesh, gridSize, 2 * scale * (cellMax - cellMin)/float3(gridSize-1u), 2 * scale * (cellMin - float3(0.5f)), {
 				.optimizerIterations = dcIterations,
@@ -350,38 +374,38 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 	// create descriptor sets for draw
 	{
 		ShaderParameter params = {};
-		params["worldToCamera"] = renderData.view;
+		params["worldToCamera"] = renderData.worldToCamera;
 		params["projection"]    = renderData.projection;
 		params["lightDir"]      = lightDir;
 
 		descriptorSets = context.GetDescriptorSets(*drawPipeline->Layout());
 		context.UpdateDescriptorSets(*descriptorSets, params, *drawPipeline->Layout());
 	}
-
-	{
-		ShaderParameter params = {};
-		params["worldToCamera"] = renderData.view;
-		params["projection"]    = renderData.projection;
-		params["aabbs"]         = nodeAabbsCpu;
-
-		nodeDescriptorSets = context.GetDescriptorSets(*drawNodePipeline->Layout());
-		context.UpdateDescriptorSets(*nodeDescriptorSets, params, *drawNodePipeline->Layout());
-	}
 }
 
 void TerrainRenderer::Render(CommandContext& context, const RenderData& renderData) {
-	if (drawPipeline && descriptorSets) {
-		context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***drawPipeline);
-		context.BindDescriptors(*drawPipeline->Layout(), *descriptorSets);
-		uint32_t numNodes = 0;
-		octreeRoot.EnumerateLeaves([&](auto& n) {
-			numNodes++;
-			const auto& mesh = octreeMeshes.at(n.GetId()).first;
-			context->bindVertexBuffers(0, **mesh.vertices.mBuffer, mesh.vertices.mOffset);
-			context->bindIndexBuffer(**mesh.triangles.mBuffer, mesh.triangles.mOffset, vk::IndexType::eUint32);
-			context->drawIndexedIndirect(**mesh.drawIndirectArgs.mBuffer, mesh.drawIndirectArgs.mOffset, 1, sizeof(VkDrawIndexedIndirectCommand));
-		});
+	triangleCount = 0;
+	if (!drawPipeline || !descriptorSets) return;
 
+	context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***drawPipeline);
+	context.BindDescriptors(*drawPipeline->Layout(), *descriptorSets);
+	uint32_t numNodes = 0;
+	octreeRoot.EnumerateLeaves([&](auto& n) {
+		const auto& mesh = octreeMeshes.at(n.GetId()).first;
+
+		if (context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady) {
+			if (mesh.drawIndirectArgsCpu[0].indexCount == 0)
+				return;
+			triangleCount += mesh.drawIndirectArgsCpu[0].indexCount/3;
+		}
+
+		numNodes++;
+		context->bindVertexBuffers(0, **mesh.vertices.mBuffer, mesh.vertices.mOffset);
+		context->bindIndexBuffer(**mesh.triangles.mBuffer, mesh.triangles.mOffset, vk::IndexType::eUint32);
+		context->drawIndexedIndirect(**mesh.drawIndirectArgs.mBuffer, mesh.drawIndirectArgs.mOffset, 1, sizeof(VkDrawIndexedIndirectCommand));
+	});
+
+	if (drawNodeBoxes) {
 		context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***drawNodePipeline);
 		context.BindDescriptors(*drawNodePipeline->Layout(), *nodeDescriptorSets);
 		context->draw(24, numNodes, 0, 0);

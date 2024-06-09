@@ -51,12 +51,12 @@ public:
 	}
 
 	inline bool Join() {
-		if (!children) return false;
+		if (IsLeaf()) return false;
 		children.reset();
 		return true;
 	}
 	inline bool Split() {
-		if (children) return false;
+		if (!IsLeaf()) return false;
 		const Coordinate childExtent = (aabbMax - aabbMin) / T(2);
 		children = std::make_unique<SubdivisionNode[]>(ChildCount);
 		for (uint32_t i = 0; i < ChildCount; i++) {

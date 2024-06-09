@@ -14,9 +14,9 @@ void main(uint3 index: SV_DispatchThreadID) {
 
     const bool v0 = visibility[index.xy].x == selected;
 
-	float f = v0 ? 0.1 : 0;
+	float f = 0;
 
-    const int r = 1;
+    const int r = 2;
     for (uint x = -r; x <= r; x++) {
         for (uint y = -r; y <= r; y++) {
             const int2 i = int2(index.xy) + int2(x, y);
@@ -30,5 +30,11 @@ void main(uint3 index: SV_DispatchThreadID) {
         }
     }
 
-    if (f > 0) color[index.xy].rgb = lerp(color[index.xy].rgb, highlightColor, saturate(f));
+    if (v0) {
+        color[index.xy].rgb += highlightColor * 0.05;
+	}
+
+    if (f > 0) {
+        color[index.xy].rgb = lerp(color[index.xy].rgb, highlightColor, saturate(f));
+    }
 }

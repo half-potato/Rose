@@ -17,7 +17,7 @@ struct v2f {
 [shader("vertex")]
 v2f vertexMain(float3 pos: POSITION, float2 uv: TEXCOORD0, uint instanceId: SV_InstanceID) {
     v2f o = {};
-    o.pos = projection * float4((worldToCamera * scene.transforms[scene.instances[instanceId].transformIndex]) * pos, 1);
+    o.pos = (projection * (worldToCamera * scene.transforms[scene.instances[instanceId].transformIndex])).ProjectPointUnnormalized(pos);
     o.pos.y = -o.pos.y;
     o.instanceId = instanceId;
 	o.uv = uv;

@@ -22,6 +22,8 @@ public:
 		BufferRange<VkDrawIndexedIndirectCommand> drawIndirectArgs = {};
 		// 1 thread per triangle
 		BufferRange<uint3> dispatchIndirectArgs = {};
+		BufferRange<VkDrawIndexedIndirectCommand> drawIndirectArgsCpu = {};
+		uint64_t cpuArgsReady = 0;
 
 		ContourMesh() = default;
 		ContourMesh(const ContourMesh&) = default;
@@ -33,12 +35,14 @@ public:
 			const size_t maxTriangles = 6 * (size_t(gridSize.x - 1) * size_t(gridSize.y - 1) * size_t(gridSize.z - 1));
 			vertices  = Buffer::Create(device, sizeof(float3)*maxVertices, vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eVertexBuffer);
 			triangles = Buffer::Create(device, sizeof(uint3)*maxTriangles, vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eIndexBuffer);
-			drawIndirectArgs = Buffer::Create(device, sizeof(VkDrawIndexedIndirectCommand), vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eIndirectBuffer);
+			drawIndirectArgs = Buffer::Create(device, sizeof(VkDrawIndexedIndirectCommand), vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eIndirectBuffer|vk::BufferUsageFlagBits::eTransferSrc);
 			dispatchIndirectArgs = Buffer::Create(device, sizeof(uint3), vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eIndirectBuffer);
+			drawIndirectArgsCpu  = Buffer::Create(device, sizeof(VkDrawIndexedIndirectCommand), vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
 			device.SetDebugName(**vertices.mBuffer,             "ContourMesh::vertices");
 			device.SetDebugName(**triangles.mBuffer,            "ContourMesh::triangles");
 			device.SetDebugName(**drawIndirectArgs.mBuffer,     "ContourMesh::drawIndirectArgs");
 			device.SetDebugName(**dispatchIndirectArgs.mBuffer, "ContourMesh::dispatchIndirectArgs");
+			device.SetDebugName(**drawIndirectArgsCpu.mBuffer, "ContourMesh::drawIndirectArgsCpu");
 		}
 	};
 
@@ -48,7 +52,7 @@ public:
 		uint32_t indirectDispatchGroupSize = 256;
 	};
 
-	inline void GenerateMesh(CommandContext& context, const ContourMesh& mesh, const uint3 gridSize, const float3 gridScale, const float3 gridOffset, const GenerateMeshArgs& args = {}) {
+	inline void GenerateMesh(CommandContext& context, ContourMesh& mesh, const uint3 gridSize, const float3 gridScale, const float3 gridOffset, const GenerateMeshArgs& args = {}) {
 		context.PushDebugLabel("DualContourMesher::GenerateMesh");
 
 		BuildData meshData = cached.pop_or_create(context.GetDevice(), [&]() { return BuildData(context.GetDevice(), mesh.vertices.size()); });
@@ -138,6 +142,9 @@ public:
 			.queueFamily = context.QueueFamily()
 		});
 
+		context.Copy(mesh.drawIndirectArgs, mesh.drawIndirectArgsCpu);
+		mesh.cpuArgsReady = context.GetDevice().NextTimelineSignal();
+
 		context.PopDebugLabel();
 	}
 
@@ -165,7 +172,6 @@ private:
 		}
 	};
 	TransientResourceCache<BuildData> cached = {};
-
 };
 
 }

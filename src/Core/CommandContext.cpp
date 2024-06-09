@@ -50,7 +50,7 @@ void CommandContext::PushDebugLabel(const std::string& name, const float4 color)
 	if (!mDevice->DebugUtilsEnabled()) return;
 	mCommandBuffer.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
 		.pLabelName = name.c_str(),
-		.color = { { color.r, color.g, color.b, color.a } }	});
+		.color = { { color.x, color.y, color.z, color.w } }	});
 }
 void CommandContext::PopDebugLabel() {
 	if (!mDevice->DebugUtilsEnabled()) return;

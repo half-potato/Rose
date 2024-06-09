@@ -46,7 +46,7 @@ inline float3 viridis(const float x) {
 }
 
 // https://graphics.pixar.com/library/OrthonormalB/paper.pdf
-void ONB(const float3 n,
+inline void ONB(const float3 n,
 #ifdef __cplusplus
 	float3& b1, float3& b2
 #else

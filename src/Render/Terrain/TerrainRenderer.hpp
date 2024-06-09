@@ -10,7 +10,7 @@
 
 namespace RoseEngine {
 
-class TerrainRenderer : public IRenderer {
+class TerrainRenderer {
 private:
 	ref<Pipeline> drawPipeline = {};
 	ref<Pipeline> drawNodePipeline = {};
@@ -26,6 +26,7 @@ private:
 	float3 lightDir = normalize(float3(0,1,1));
 	bool   wire = false;
 	bool   showBackfaces = false;
+	bool   drawNodeBoxes = false;
 
 	uint3    gridSize = uint3(16,16,16);
 	float    scale = 1.f;
@@ -42,18 +43,20 @@ private:
 	ShaderParameter     drawParameters = {};
 	ref<DescriptorSets> descriptorSets = {};
 	ref<DescriptorSets> nodeDescriptorSets = {};
-
+	uint32_t triangleCount = 0;
 
 	void CreatePipelines(Device& device, vk::Format format);
 	bool CheckCompileStatus(CommandContext& context);
 
 public:
 	~TerrainRenderer();
-	void Initialize(CommandContext& context) override;
-	void InspectorWidget(CommandContext& context) override;
-	void PreRender(CommandContext& context, const RenderData& renderData) override;
-	void Render(CommandContext& context, const RenderData& renderData) override;
+	void Initialize(CommandContext& context);
+	void InspectorWidget(CommandContext& context);
+	void PreRender(CommandContext& context, const RenderData& renderData);
+	void Render(CommandContext& context, const RenderData& renderData);
 	void NodeEditorWidget();
+	inline void PostRender(CommandContext& context, const RenderData& renderData) {}
+
 };
 
 }

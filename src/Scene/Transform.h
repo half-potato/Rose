@@ -10,6 +10,10 @@ import Core.Math;
 
 namespace RoseEngine {
 
+#ifdef __cplusplus
+inline auto mul(auto x, auto y) { return x * y; }
+#endif
+
 struct Transform {
 	float4x4 transform;
 
@@ -41,37 +45,40 @@ struct Transform {
 	}
 	inline static Transform Perspective(const float fovY, const float aspect, const float nearZ) {
 		Transform t = {};
-		t.transform = glm::infinitePerspectiveRH(fovY, aspect, nearZ);
+		t.transform = glm::tweakedInfinitePerspective(fovY, aspect, nearZ);
 		return t;
 	}
 	#endif
+
+	inline float4 ProjectPointUnnormalized(const float3 v, const float w = 1.f) CPP_CONST {
+		return mul(transform, float4(v, w));
+	}
+	inline float3 ProjectPoint(const float3 v) CPP_CONST {
+		float4 h = ProjectPointUnnormalized(v);
+		if (h.w != 0) h /= h.w;
+		return float3(h.x, h.y, h.z);
+	}
+	inline float3 TransformPoint(const float3 v) CPP_CONST {
+		float4 h = ProjectPointUnnormalized(v);
+		return float3(h.x, h.y, h.z);
+	}
+	inline float3 TransformVector(const float3 v) CPP_CONST {
+		float4 h = ProjectPointUnnormalized(v, 0.f);
+		return float3(h.x, h.y, h.z);
+	}
 };
 
-#ifdef __cplusplus
-inline Transform operator*(const Transform lhs, const Transform rhs) {
-	Transform r = {};
-	r.transform = lhs.transform * rhs.transform;
-	return r;
-}
-inline float4 operator*(const Transform lhs, const float4 v) {
-	return lhs.transform * v;
-}
-#else
 inline Transform operator*(const Transform lhs, const Transform rhs) {
 	Transform r = {};
 	r.transform = mul(lhs.transform, rhs.transform);
 	return r;
 }
-inline float4 operator*(const Transform lhs, const float4 v) {
-	return mul(lhs.transform, v);
-}
-#endif
-inline float3 operator*(const Transform lhs, const float3 v) {
-	float4 h = lhs * float4(v, 1);
-	if (h.w > 0) h /= h.w;
-	return float3(h.x, h.y, h.z);
-}
 
+inline Transform transpose(const Transform t) {
+	Transform r = {};
+	r.transform = transpose(t.transform);
+	return r;
+}
 #ifdef __cplusplus
 inline Transform inverse(const Transform t) {
 	Transform r = {};
@@ -79,10 +86,5 @@ inline Transform inverse(const Transform t) {
 	return r;
 }
 #endif
-inline Transform transpose(const Transform t) {
-	Transform r = {};
-	r.transform = transpose(t.transform);
-	return r;
-}
 
 }

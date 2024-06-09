@@ -9,7 +9,7 @@ namespace RoseEngine {
 
 ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& filename);
 
-class SceneEditor : public IRenderer {
+class SceneEditor {
 private:
 	ref<SceneRenderer> scene = nullptr;
 	weak_ref<SceneNode> selected = {};
@@ -53,6 +53,8 @@ private:
 
 public:
 	inline SceneEditor(const ref<SceneRenderer>& scene_) : scene(scene_) {}
+
+	inline void Initialize(CommandContext& context) {}
 
 	inline void LoadScene(CommandContext& context) {
 		auto f = pfd::open_file("Open scene", "", {
@@ -120,7 +122,7 @@ public:
 		if (ImGui::Selectable("Scale",     (operation & ImGuizmo::SCALE) != 0)     || ImGui::IsKeyPressed(ImGuiKey_G, false)) operation ^= (uint32_t)ImGuizmo::SCALE;
 	}
 
-	inline void InspectorWidget(CommandContext& context) override {
+	inline void InspectorWidget(CommandContext& context) {
 		bool changed = false;
 
 		auto n = selected.lock();
@@ -156,7 +158,7 @@ public:
 			scene->SetDirty();
 	}
 
-	inline void PreRender(CommandContext& context, const RenderData& renderData) override {
+	inline void PreRender(CommandContext& context, const RenderData& renderData) {
 		if (!viewportPickerQueue.empty()) {
 			auto&[buf, value, nodes] = viewportPickerQueue.front();
 			if (context.GetDevice().CurrentTimelineValue() >= value) {
@@ -184,14 +186,16 @@ public:
 			}
 
 			Transform t = n->transform.has_value() ? (parentTransform * n->transform.value()) : parentTransform;
-			if (TransformGizmoGui(t, renderData.view, renderData.projection, (ImGuizmo::OPERATION)operation, opLocal)) {
+			if (TransformGizmoGui(t, renderData.worldToCamera, renderData.projection, (ImGuizmo::OPERATION)operation, opLocal)) {
 				n->transform = inverse(parentTransform) * t;
 				scene->SetDirty();
 			}
 		}
 	}
 
-	inline void PostRender(CommandContext& context, const RenderData& renderData) override {
+	inline void Render(CommandContext& context, const RenderData& renderData) {}
+
+	inline void PostRender(CommandContext& context, const RenderData& renderData) {
 		if (auto n = selected.lock(); n && n->mesh && n->material) {
 			uint32_t idx = -1;
 			for (uint32_t i = 0; i < scene->GetInstanceNodes().size(); i++) {
@@ -207,11 +211,11 @@ public:
 				}
 
 				ShaderParameter params = {};
-				params["color"]      = ImageParameter{renderData.renderTarget, vk::ImageLayout::eGeneral};
-				params["visibility"] = ImageParameter{renderData.visibility, vk::ImageLayout::eShaderReadOnlyOptimal};
+				params["color"]      = ImageParameter{renderData.gbuffer.renderTarget, vk::ImageLayout::eGeneral};
+				params["visibility"] = ImageParameter{renderData.gbuffer.visibility, vk::ImageLayout::eShaderReadOnlyOptimal};
 				params["highlightColor"] = float3(1, 0.9f, 0.2f);
 				params["selected"] = idx;
-				context.Dispatch(*outlinePipeline, renderData.renderTarget.Extent(), params);
+				context.Dispatch(*outlinePipeline, renderData.gbuffer.renderTarget.Extent(), params);
 			}
 		}
 
@@ -222,7 +226,7 @@ public:
 			float2 cursorScreen = std::bit_cast<float2>(ImGui::GetIO().MousePos);
 			int2 cursor = int2(cursorScreen - float2(rect));
 			if (cursor.x >= 0 && cursor.y >= 0 && cursor.x < int(rect.z) && cursor.y < int(rect.w)) {
-				context.AddBarrier(renderData.visibility, Image::ResourceState{
+				context.AddBarrier(renderData.gbuffer.visibility, Image::ResourceState{
 					.layout = vk::ImageLayout::eTransferSrcOptimal,
 					.stage  = vk::PipelineStageFlagBits2::eTransfer,
 					.access = vk::AccessFlagBits2::eTransferRead,
@@ -236,11 +240,11 @@ public:
 					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
 					VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_STRATEGY_MIN_TIME_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-				context->copyImageToBuffer(**renderData.visibility.GetImage(), vk::ImageLayout::eTransferSrcOptimal, **buf.mBuffer, vk::BufferImageCopy{
+				context->copyImageToBuffer(**renderData.gbuffer.visibility.GetImage(), vk::ImageLayout::eTransferSrcOptimal, **buf.mBuffer, vk::BufferImageCopy{
 					.bufferOffset = 0,
 					.bufferRowLength = 0,
 					.bufferImageHeight = 0,
-					.imageSubresource = renderData.visibility.GetSubresourceLayer(),
+					.imageSubresource = renderData.gbuffer.visibility.GetSubresourceLayer(),
 					.imageOffset = vk::Offset3D{ cursor.x, cursor.y, 0 },
 					.imageExtent = vk::Extent3D{ 1, 1, 1 } });
 
