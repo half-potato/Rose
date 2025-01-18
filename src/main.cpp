@@ -32,7 +32,6 @@ int main(int argc, const char** argv) {
 	app.AddWidget("Viewport", [&]()      { viewport.Render(*app.contexts[app.swapchain->ImageIndex()], app.dt); }, true);
 	app.AddWidget("Scene graph", [&]()   { sceneEditor->SceneGraphWidget(); }, true);
 	app.AddWidget("Tools", [&]()         { sceneEditor->ToolsWidget(); }, true);
-	app.AddWidget("Terrain nodes", [&]() { terrain->NodeEditorWidget(); }, true);
 
 	app.Run();
 

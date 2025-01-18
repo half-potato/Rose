@@ -131,7 +131,8 @@ ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDev
 	semaphoreInfo.get<vk::SemaphoreTypeCreateInfo>()
 		.setSemaphoreType(vk::SemaphoreType::eTimeline)
 		.setInitialValue(device->IncrementTimelineSignal());
-	device->mTimelineSemaphore = device->mDevice.createSemaphore(semaphoreInfo.get<vk::SemaphoreCreateInfo>());
+	device->mTimelineSemaphore = (*device)->createSemaphore(semaphoreInfo.get<vk::SemaphoreCreateInfo>());
+	device->SetDebugName(*device->mTimelineSemaphore, "Device timeline");
 
 	// Assign stuff
 

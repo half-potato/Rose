@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define LOG_SHADER_REFLECTION
+
 namespace RoseEngine {
 
 inline static const std::unordered_map<SlangBindingType, vk::DescriptorType> gDescriptorTypeMap = {
@@ -75,126 +77,182 @@ inline const char* to_string(slang::ParameterCategory category) {
 	};
 };
 
-struct ReflectParameterContext {
-	uint32_t bindingSpaceOffset = 0;
-	uint32_t bindingIndexOffset = 0;
-	uint32_t constantOffset = 0;
-	uint32_t depth = 1;
-	bool     pushConstant = false;
-	bool     varying = false;
-};
 
-void ReflectParameter(ShaderParameterBinding& parent, slang::VariableLayoutReflection& parameter, ReflectParameterContext ctx = {}) {
-	std::string                  parameterName = parameter.getName();
-	slang::TypeReflection*       type          = parameter.getType();
-	slang::TypeLayoutReflection* typeLayout    = parameter.getTypeLayout();
-	slang::ParameterCategory     category      = typeLayout->getParameterCategory();
-	slang::TypeReflection::Kind  kind          = typeLayout->getKind();
+struct ParameterAccessPath {
+	static const size_t kInvalidAccessPath = ~size_t(0);
 
-	#ifdef LOG_SHADER_REFLECTION
-	std::cout << std::string(ctx.depth, '\t') << parameterName;
-	if (parameter.getSemanticName()) {
-		if (ctx.varying) std::cout << " location = " << parameter.getBindingIndex();
-		std::cout << " : " << parameter.getSemanticName();
-	}
-	std::cout << " | " << to_string(category);
-	std::cout << " | " << to_string(kind);
-	if (category == slang::ParameterCategory::Uniform) {
-		// For uniform parameters the binding "space" is unused,
-		// and the "index" is the byte offset of the parameter in its parent.
-		std::cout << " | " << parameter.getBindingIndex() << "+" << typeLayout->getSize();
-		std::cout << " | " << ctx.bindingSpaceOffset << "." << ctx.bindingIndexOffset;
-	} else {
-		if (category == slang::ParameterCategory::DescriptorTableSlot)
-			std::cout << " | " << (parameter.getBindingSpace() + ctx.bindingSpaceOffset) << "." << (parameter.getBindingIndex() + ctx.bindingIndexOffset);
-	}
-	std::cout << std::endl;
-	ctx.depth += 1;
-	#endif
+    slang::VariableLayoutReflection* varLayout = nullptr;
+	size_t leafNode = kInvalidAccessPath;
+    size_t outer = kInvalidAccessPath;
 
-	if (category == slang::ParameterCategory::None)
-		return; // non-bindable parameter (e.g. thread index)
+    size_t deepestConstantBuffer = kInvalidAccessPath;
+    size_t deepestParameterBlock = kInvalidAccessPath;
+	size_t depth = 0;
+	bool pushConstant = false;
 
-	if (category == slang::ParameterCategory::RegisterSpace || category == slang::ParameterCategory::SubElementRegisterSpace) {
-		ctx.bindingSpaceOffset += parameter.getBindingIndex();
-		ctx.bindingIndexOffset = 0;
+	void GetCumulativeOffset(const std::vector<ParameterAccessPath>& nodes, slang::ParameterCategory layoutUnit, uint32_t& offset, uint32_t& space) const {
+		offset = 0;
+		space = 0;
+		switch(layoutUnit) {
+			default:
+				for(auto node = leafNode; node != ParameterAccessPath::kInvalidAccessPath; node = nodes[node].outer) {
+					offset += nodes[node].varLayout->getOffset((SlangParameterCategory)layoutUnit);
+					space  += nodes[node].varLayout->getBindingSpace((SlangParameterCategory)layoutUnit);
+				}
+			case slang::ParameterCategory::Uniform:
+				for (auto node = leafNode; node != deepestConstantBuffer; node = nodes[node].outer) {
+					offset += nodes[node].varLayout->getOffset((SlangParameterCategory)layoutUnit);
+				}
+				break;
+			case slang::ParameterCategory::ConstantBuffer:
+			case slang::ParameterCategory::ShaderResource:
+			case slang::ParameterCategory::UnorderedAccess:
+			case slang::ParameterCategory::SamplerState:
+			case slang::ParameterCategory::DescriptorTableSlot:
+				for (auto node = leafNode; node != deepestParameterBlock; node = nodes[node].outer) {
+					offset += nodes[node].varLayout->getOffset((SlangParameterCategory)layoutUnit);
+					space  += nodes[node].varLayout->getBindingSpace((SlangParameterCategory)layoutUnit);
+				}
+				for (auto node = deepestParameterBlock; node != ParameterAccessPath::kInvalidAccessPath; node = nodes[node].outer) {
+					space += nodes[node].varLayout->getOffset((SlangParameterCategory)slang::ParameterCategory::SubElementRegisterSpace);
+				}
+				break;
+		}
 	}
 
-	if (category == slang::ParameterCategory::DescriptorTableSlot) {
-		// bindable descriptor such as a texture or constant buffer
-		ctx.bindingSpaceOffset += parameter.getBindingSpace();
-		ctx.bindingIndexOffset += parameter.getBindingIndex();
-		parent[parameterName] = ShaderDescriptorBinding{
-			.descriptorType = gDescriptorTypeMap.at((SlangBindingType)typeLayout->getBindingRangeType(0)),
-			.setIndex       = ctx.bindingSpaceOffset,
-			.bindingIndex   = ctx.bindingIndexOffset,
-			.arraySize = std::max(1u, (uint32_t)type->getTotalArrayElementCount()),
-			.inputAttachmentIndex = (uint32_t)-1,
-			.writable = false
-		};
+	bool IsPushConstant(const std::vector<ParameterAccessPath>& nodes) const {
+		for (auto node = leafNode; node != ParameterAccessPath::kInvalidAccessPath; node = nodes[node].outer) {
+			if (nodes[node].pushConstant)
+				return true;
+			if (nodes[node].varLayout->getTypeLayout()->getParameterCategory() == slang::ParameterCategory::PushConstantBuffer)
+				return true;
+		}
+		return false;
 	}
 
-	if (category == slang::ParameterCategory::Uniform || ctx.varying) {
-		ShaderParameterBinding& param = parent[parameterName];
-		if (ctx.varying) {
-			if (parameter.getSemanticName()) {
-				param = ShaderVertexAttributeBinding{
-					.location = parameter.getBindingIndex(),
-					.semantic = parameter.getSemanticName(),
-					.semanticIndex = (uint32_t)parameter.getSemanticIndex() };
-			} else
-				param = std::monostate{};
-		} else
-			param = ShaderConstantBinding{
-				.offset   = (uint32_t)parameter.getOffset() + ctx.constantOffset,
-				.typeSize = (uint32_t)typeLayout->getSize(),
-				.setIndex     = ctx.bindingSpaceOffset,
-				.bindingIndex = ctx.bindingIndexOffset,
-				.pushConstant = ctx.pushConstant };
-
-		if (kind == slang::TypeReflection::Kind::Struct) {
-			for (uint32_t i = 0; i < typeLayout->getFieldCount(); i++) {
-				ReflectParameter(param, *typeLayout->getFieldByIndex(i), ctx);
+	uint32_t GetCumulativeArraySize(const std::vector<ParameterAccessPath>& nodes) {
+		uint32_t arraySize = 1;
+		for(auto node = leafNode; node != ParameterAccessPath::kInvalidAccessPath; node = nodes[node].outer) {
+			slang::TypeLayoutReflection* typeLayout = nodes[node].varLayout->getTypeLayout();
+			if (typeLayout->getKind() == slang::TypeReflection::Kind::Array) {
+				arraySize *= typeLayout->getElementCount();
 			}
 		}
+		return arraySize;
+	}
+};
+
+void EnumerateAccessPaths(std::vector<ParameterAccessPath>& nodes, slang::VariableLayoutReflection* parameter, ShaderParameterBinding& binding, ParameterAccessPath accessPath = {}) {
+	// create access path node for parameter
+	accessPath.varLayout = parameter;
+	accessPath.outer = accessPath.leafNode;
+	accessPath.leafNode = nodes.size();
+	accessPath.depth++;
+	nodes.emplace_back(accessPath);
+
+	slang::TypeLayoutReflection* typeLayout = parameter->getTypeLayout();
+	bool isArray = typeLayout->getKind() == slang::TypeReflection::Kind::Array;
+	uint32_t arraySize = 1;
+	if (isArray) {
+		arraySize  = typeLayout->getElementCount();
+		typeLayout = typeLayout->getElementTypeLayout();
 	}
 
-	if (category == slang::ParameterCategory::RegisterSpace || category == slang::ParameterCategory::SubElementRegisterSpace || kind == slang::TypeReflection::Kind::ConstantBuffer) {
-		slang::TypeLayoutReflection* subElementType = typeLayout->getElementTypeLayout();
+	uint32_t setIndex = 0;
+	uint32_t bindingIndex = 0;
+	uint32_t uniformOffset = 0;
+	uint32_t uniformSize = 0;
 
-		ShaderParameterBinding* param;
-		if (kind == slang::TypeReflection::Kind::ConstantBuffer && (subElementType->getName() == nullptr || parameterName == subElementType->getName())) {
-			// unnamed cbuffer
-			param = &parent;
+	if (parameter->getName()) {
+		if (parameter->getCategory() == slang::ParameterCategory::Uniform) {
+			uint32_t tmp;
+			uniformSize = typeLayout->getSize();
+			accessPath.GetCumulativeOffset(nodes, slang::ParameterCategory::Uniform, uniformOffset, tmp);
+			if (accessPath.deepestConstantBuffer != ParameterAccessPath::kInvalidAccessPath)
+				nodes[accessPath.deepestConstantBuffer].GetCumulativeOffset(nodes, slang::ParameterCategory::DescriptorTableSlot, bindingIndex, tmp);
+			accessPath.GetCumulativeOffset(nodes, slang::ParameterCategory::DescriptorTableSlot, tmp, setIndex);
 		} else {
-			param = &parent[parameterName];
-			if (category == slang::ParameterCategory::RegisterSpace || category == slang::ParameterCategory::SubElementRegisterSpace)
-				*param = std::monostate{};
-			else
-				*param = ShaderConstantBinding{ .pushConstant = ctx.pushConstant };
+			if (parameter->getCategory() == slang::ParameterCategory::DescriptorTableSlot) {
+				accessPath.GetCumulativeOffset(nodes, slang::ParameterCategory::DescriptorTableSlot, bindingIndex, setIndex);
+			}
 		}
 
-		if (category == slang::ParameterCategory::PushConstantBuffer)
-			ctx.pushConstant = true;
+		#ifdef LOG_SHADER_REFLECTION
+		std::stringstream ss;
+		ss << std::string(accessPath.depth, ' ');
+		ss << parameter->getName();
+		if (isArray) ss << "[" << arraySize <<  "]";
+		if (parameter->getSemanticName()) {
+			ss << " : " << parameter->getSemanticName();
+			ss << parameter->getSemanticIndex();
+		}
+		if (accessPath.IsPushConstant(nodes)) ss << " [PC]";
+		std::cout << std::left << std::setw(30) << ss.view();
+		std::cout << " | " << std::left << std::setw(16) << to_string(typeLayout->getKind());
+		std::cout << " | " << std::left << std::setw(24) << to_string(parameter->getCategory());
+		if (parameter->getCategory() == slang::ParameterCategory::VaryingInput || parameter->getCategory() == slang::ParameterCategory::VaryingOutput) {
+			std::cout << " | location = " << parameter->getBindingIndex();
+		}
+		else if (parameter->getCategory() == slang::ParameterCategory::Uniform || parameter->getCategory() == slang::ParameterCategory::DescriptorTableSlot)
+			std::cout << " | " << std::left << std::setw(5) << (std::to_string(setIndex) + "." + std::to_string(bindingIndex));
+		if (parameter->getCategory() == slang::ParameterCategory::Uniform) {
+			std::cout << " | offset = " << std::left << std::setw(4) << uniformOffset;
+			std::cout << " | size = "   << std::left << std::setw(4) << uniformSize;
+		}
+		std::cout << " | arraySize = " << accessPath.GetCumulativeArraySize(nodes);
+		std::cout << std::endl;
+		#endif
 
-		for (uint32_t i = 0; i < subElementType->getFieldCount(); i++)
-			ReflectParameter(*param, *subElementType->getFieldByIndex(i), ctx);
-	}
-}
-
-void ApplyGlobalOffsets(const ShaderParameterBinding& binding, ReflectParameterContext& ctx) {
-	if (auto* descriptorBinding = binding.get_if<ShaderDescriptorBinding>()) {
-		if (descriptorBinding->setIndex == ctx.bindingSpaceOffset) {
-			ctx.bindingIndexOffset = std::max(ctx.bindingIndexOffset, 1 + descriptorBinding->bindingIndex);
+		switch (parameter->getCategory()) {
+			case slang::ParameterCategory::VaryingInput:
+			case slang::ParameterCategory::VaryingOutput:
+				binding = ShaderVertexAttributeBinding{
+					.location = parameter->getBindingIndex(),
+					.semantic      = parameter->getSemanticName(),
+					.semanticIndex = (uint32_t)parameter->getSemanticIndex()
+				};
+				break;
+			case slang::ParameterCategory::DescriptorTableSlot:
+				binding = ShaderDescriptorBinding{
+					.descriptorType = gDescriptorTypeMap.at((SlangBindingType)typeLayout->getBindingRangeType(0)),
+					.setIndex       = setIndex,
+					.bindingIndex   = bindingIndex,
+					.arraySize      = accessPath.GetCumulativeArraySize(nodes),
+					.inputAttachmentIndex = {},
+					.writable              = true
+				};
+				break;
+			case slang::ParameterCategory::Uniform:
+				binding = ShaderConstantBinding{
+					.offset = uniformOffset,
+					.typeSize = uniformSize,
+					.setIndex = setIndex,
+					.bindingIndex = bindingIndex,
+					.pushConstant = accessPath.IsPushConstant(nodes)
+				};
+				break;
 		}
 	}
-	if (auto* constantBinding = binding.get_if<ShaderConstantBinding>()) {
-		if (constantBinding->pushConstant) {
-			ctx.constantOffset = std::max(ctx.constantOffset, constantBinding->offset + constantBinding->typeSize);
+
+	switch (typeLayout->getKind()) {
+		case slang::TypeReflection::Kind::Struct: {
+		  	int fieldCount = typeLayout->getFieldCount();
+			for (int f = 0; f < fieldCount; f++) {
+				slang::VariableLayoutReflection* field = typeLayout->getFieldByIndex(f);
+				EnumerateAccessPaths(nodes, field, binding[field->getName()], accessPath);
+			}
+			break;
 		}
+		case slang::TypeReflection::Kind::ConstantBuffer:
+		case slang::TypeReflection::Kind::ParameterBlock:
+		case slang::TypeReflection::Kind::TextureBuffer:
+		case slang::TypeReflection::Kind::ShaderStorageBuffer:
+			accessPath.deepestConstantBuffer = accessPath.leafNode;
+			if (typeLayout->getSize((SlangParameterCategory)slang::ParameterCategory::SubElementRegisterSpace) != 0)
+				accessPath.deepestParameterBlock = accessPath.leafNode;
+			EnumerateAccessPaths(nodes, typeLayout->getElementVarLayout(), binding, accessPath);
+    		break;
 	}
-	for (auto[name, b] : binding)
-		ApplyGlobalOffsets(b, ctx);
 }
 
 ref<ShaderModule> ShaderModule::Create(
@@ -300,8 +358,9 @@ ref<ShaderModule> ShaderModule::Create(
 	// reflection
 	{
 		slang::ShaderReflection* shaderReflection = (slang::ShaderReflection*)request->getReflection();
+		slang::EntryPointReflection* entryPointReflection = shaderReflection->getEntryPointByIndex(0);
 
-		switch (shaderReflection->getEntryPointByIndex(0)->getStage()) {
+		switch (entryPointReflection->getStage()) {
 			case SLANG_STAGE_VERTEX:         shader->mStage = vk::ShaderStageFlagBits::eVertex; break;
 			case SLANG_STAGE_HULL:           shader->mStage = vk::ShaderStageFlagBits::eTessellationControl; break;
 			case SLANG_STAGE_DOMAIN:         shader->mStage = vk::ShaderStageFlagBits::eTessellationEvaluation; break;
@@ -320,41 +379,21 @@ ref<ShaderModule> ShaderModule::Create(
 
 		if (shader->mStage == vk::ShaderStageFlagBits::eCompute) {
 			SlangUInt sz[3];
-			shaderReflection->getEntryPointByIndex(0)->getComputeThreadGroupSize(3, &sz[0]);
+			entryPointReflection->getComputeThreadGroupSize(3, &sz[0]);
 			shader->mWorkgroupSize = uint3( (uint32_t)sz[0], (uint32_t)sz[1], (uint32_t)sz[2] );
 		}
 
 		shader->mRootBinding = ShaderParameterBinding{};
 
-		ReflectParameterContext ctx = {};
+		std::vector<ParameterAccessPath> nodes;
+		EnumerateAccessPaths(nodes, shaderReflection->getGlobalParamsVarLayout(), shader->mRootBinding);
 
-		// global parameters
-		for (uint32_t parameter_index = 0; parameter_index < shaderReflection->getParameterCount(); parameter_index++) {
-			slang::VariableLayoutReflection* parameter = shaderReflection->getParameterByIndex(parameter_index);
-			ReflectParameter(shader->mRootBinding, *parameter, ctx);
-		}
-
-		auto entryPointReflection = shaderReflection->getEntryPointByIndex(0);
-		if (entryPointReflection->getParameterCount() > 0) {
-			ApplyGlobalOffsets(shader->mRootBinding, ctx);
-			#ifdef LOG_SHADER_REFLECTION
-			std::cout << entryPoint << ":" << std::endl;
-			#endif
-			for (uint32_t parameter_index = 0; parameter_index < entryPointReflection->getParameterCount(); parameter_index++) {
-				slang::VariableLayoutReflection* parameter = entryPointReflection->getParameterByIndex(parameter_index);
-				if (parameter->getCategory() == slang::ParameterCategory::VaryingOutput || parameter->getCategory() == slang::ParameterCategory::None)
-					continue;
-
-				if (parameter->getName())
-					shader->mEntryPointArguments.emplace_back(parameter->getName());
-
-				ReflectParameterContext ctxi = ctx;
-				if (parameter->getCategory() == slang::ParameterCategory::Uniform)
-					ctxi.pushConstant = true; // slang converts uniforms in the entry point to push constants
-				if (parameter->getCategory() == slang::ParameterCategory::VaryingInput)
-					ctxi.varying = true; // slang converts uniforms in the entry point to push constants
-				ReflectParameter(shader->mRootBinding, *parameter, ctxi);
-			}
+		for (uint32_t i = 0; i < entryPointReflection->getParameterCount(); i++) {
+			slang::VariableLayoutReflection* varLayout = entryPointReflection->getParameterByIndex(i);
+			ParameterAccessPath accessPath = {};
+			if (varLayout->getCategory() == slang::ParameterCategory::Uniform)
+				accessPath.pushConstant = true;
+			EnumerateAccessPaths(nodes, varLayout, shader->mRootBinding[varLayout->getName()], accessPath);
 		}
 	}
 

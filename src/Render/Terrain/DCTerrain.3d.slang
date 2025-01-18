@@ -1,26 +1,27 @@
 import Render.GBuffer;
 import Scene.Transform;
-import Render.DualContouring.ProceduralVolume;
+import Render.Terrain.Terrain;
 
 using namespace RoseEngine;
 
-uniform Transform worldToCamera;
-uniform Transform projection;
+uniform Transform worldToNDC;
 uniform float3    lightDir;
-uniform ProceduralVolume volume;
+uniform Terrain   terrain;
 
 [shader("vertex")]
-float4 vertexMain(in float3 vertex: POSITION, out float3 pos: TEXCOORD0) : SV_Position {
+float4 vertexMain(in float3 vertex: POSITION, out float3 pos: TEXCOORD0) : SV_Position
+{
     pos = vertex;
 
-    float4 clip = (projection * worldToCamera).ProjectPointUnnormalized(vertex);
+    float4 clip = worldToNDC.ProjectPointUnnormalized(vertex);
     clip.y = -clip.y;
     return clip;
 }
 
 [shader("fragment")]
-GBuffer fragmentMain(float3 pos: TEXCOORD0) {
-    float3 normal = normalize(volume.SampleGradient(pos));
+GBuffer fragmentMain(float3 pos: TEXCOORD0)
+{
+    float3 normal = normalize(terrain.SampleGradient(pos));
 	float3 brdf = max(0, dot(normal, lightDir));
     float3 Le = float3(.3, .8, .4);
 

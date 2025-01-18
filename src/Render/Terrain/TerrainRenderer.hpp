@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Render/ViewportWidget.hpp>
-#include <Render/Procedural/ProceduralFunction.hpp>
-#include <Render/DualContouring/DualContourMesher.hpp>
-
-#include "SubdivisionTree.hpp"
-
 #include <future>
+
+#include <Render/ViewportWidget.hpp>
+
+#include "DualContourMesher.hpp"
+#include "SubdivisionTree.hpp"
 
 namespace RoseEngine {
 
@@ -17,11 +16,8 @@ private:
 	vk::Format    pipelineFormat = vk::Format::eUndefined;
 
 	bool compiling = false;
-	std::future<std::tuple<ref<Pipeline>, ref<Pipeline>, vk::Format, size_t>> compileJob;
-
-	ProceduralFunction heightFunction = {};
-	size_t nodeTreeHash = 0;
-	std::string compiledHeightFunction = {};
+	using PipelineCompileResult = std::tuple<ref<Pipeline>, ref<Pipeline>, vk::Format, bool>;
+	std::future<PipelineCompileResult> compileJob;
 
 	float3 lightDir = normalize(float3(0,1,1));
 	bool   wire = false;
@@ -39,6 +35,7 @@ private:
 	OctreeNode octreeRoot = {};
 	std::unordered_map<OctreeNode::NodeId, std::pair<DualContourMesher::ContourMesh, bool>> octreeMeshes = {};
 	TransientResourceCache<DualContourMesher::ContourMesh> cachedMeshes = {};
+	bool freezeLod = false;
 
 	ShaderParameter     drawParameters = {};
 	ref<DescriptorSets> descriptorSets = {};
@@ -49,14 +46,12 @@ private:
 	bool CheckCompileStatus(CommandContext& context);
 
 public:
+	inline void Initialize(CommandContext& context) {}
 	~TerrainRenderer();
-	void Initialize(CommandContext& context);
 	void InspectorWidget(CommandContext& context);
 	void PreRender(CommandContext& context, const RenderData& renderData);
 	void Render(CommandContext& context, const RenderData& renderData);
-	void NodeEditorWidget();
 	inline void PostRender(CommandContext& context, const RenderData& renderData) {}
-
 };
 
 }

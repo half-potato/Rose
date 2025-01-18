@@ -1,32 +1,12 @@
 #include "TerrainRenderer.hpp"
 #include <Core/Gui.hpp>
 #include <Core/Math.h>
-#include <Render/Procedural/MathNode.hpp>
 #include <portable-file-dialogs.h>
 #include <iostream>
 
 namespace RoseEngine {
 
-void TerrainRenderer::Initialize(CommandContext& context) {
-	if (std::filesystem::exists("GetDensity.bson")) {
-		auto jsonData = ReadFile<std::vector<uint8_t>>("GetDensity.bson");
-		json serialized = json::from_bson(jsonData);
-		heightFunction = ProceduralFunction::Deserialize(serialized);
-	} else {
-		heightFunction = ProceduralFunction("GetDensity",
-			// outputs
-			NameMap<std::string>{ { "density", "float" } },
-			// inputs
-			NameMap<NodeOutputConnection>{ { "density",
-				make_ref<MathNode>(MathNode::MathOp::eAdd,
-					make_ref<MathNode>(MathNode::MathOp::eLength,
-						NodeOutputConnection{ make_ref<ProceduralFunction::InputVariable>("position", "float3"), "position" }),
-					make_ref<ExpressionNode>("1")) }
-		});
-	}
-}
 TerrainRenderer::~TerrainRenderer() {
-	WriteFile("GetDensity.bson", json::to_bson(heightFunction.Serialize()));
 	if (compiling && compileJob.valid()) {
 		compileJob.wait();
 	}
@@ -37,30 +17,26 @@ void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 
 	compiling = true;
 
-	compileJob = std::async(std::launch::async, [&,format]() -> std::tuple<ref<Pipeline>, ref<Pipeline>, vk::Format, size_t>{
+	compileJob = std::async(std::launch::async, [&,format]() -> TerrainRenderer::PipelineCompileResult {
 		auto srcFile = FindShaderPath("DCTerrain.3d.slang");
 		auto nodeSrcFile = FindShaderPath("OctVis.3d.slang");
-
-		size_t nodeHash = heightFunction.Root().hash();
-		if (nodeHash != nodeTreeHash)
-			compiledHeightFunction = heightFunction.Compile("\n");
-
-		if (nodeHash != nodeTreeHash || !mesher)
-			mesher = make_ref<DualContourMesher>(device, compiledHeightFunction);
-
-		ShaderDefines defs {
-			{ "PROCEDURAL_NODE_SRC", compiledHeightFunction }
-		};
-
 
 		ref<const ShaderModule> vertexShader, fragmentShader;
 		if (drawPipeline) {
 			vertexShader   = drawPipeline->GetShader(vk::ShaderStageFlagBits::eVertex);
 			fragmentShader = drawPipeline->GetShader(vk::ShaderStageFlagBits::eFragment);
 		}
-		if (!vertexShader || vertexShader->IsStale() || nodeHash != nodeTreeHash)
+
+		ShaderDefines defs = {};
+
+		bool makeMesher = !mesher || mesher->IsStale();
+
+		if (makeMesher)
+			mesher = make_ref<DualContourMesher>(device, defs);
+
+		if (!vertexShader || vertexShader->IsStale())
 			vertexShader   = ShaderModule::Create(device, srcFile, "vertexMain", "sm_6_7", defs, {}, false);
-		if (!fragmentShader || fragmentShader->IsStale() || nodeHash != nodeTreeHash)
+		if (!fragmentShader || fragmentShader->IsStale())
 			fragmentShader = ShaderModule::Create(device, srcFile, "fragmentMain", "sm_6_7", defs, {}, false);
 
 		GraphicsPipelineInfo pipelineInfo {
@@ -156,7 +132,7 @@ void TerrainRenderer::CreatePipelines(Device& device, vk::Format format) {
 
 		auto drawnodep = Pipeline::CreateGraphics(device, nodeVertexShader, nodeFragmentShader, nodePipelineInfo);
 
-		return { drawp, drawnodep, format, nodeHash };
+		return { drawp, drawnodep, format, makeMesher };
 	});
 }
 
@@ -164,24 +140,25 @@ bool TerrainRenderer::CheckCompileStatus(CommandContext& context) {
 	if (!compiling || !compileJob.valid())
 		return drawPipeline != nullptr;
 
-	if (compileJob.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+	if (compileJob.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
 		return false;
-	}
 
 	compiling = false;
 	try {
-		const auto[drawPipeline_, drawNodePipeline_, pipelineFormat_, nodeTreeHash_] = compileJob.get();
-		if (nodeTreeHash_ != nodeTreeHash) {
+		const auto[drawPipeline_, drawNodePipeline_, pipelineFormat_, meshesDirty] = compileJob.get();
+
+		if (meshesDirty)
+		{
 			for (const auto& [n, m] : octreeMeshes)
 				cachedMeshes.push(m.first, context.GetDevice().NextTimelineSignal());
 			octreeMeshes = {};
 			octreeRoot.Join();
 		}
 		context.GetDevice().Wait();
+
 		drawPipeline = drawPipeline_;
 		drawNodePipeline = drawNodePipeline_;
 		pipelineFormat = pipelineFormat_;
-		nodeTreeHash = nodeTreeHash_;
 	} catch (std::exception e) {
 		std::cout << e.what() << std::endl;
 		return false;
@@ -211,6 +188,8 @@ void TerrainRenderer::InspectorWidget(CommandContext& context) {
 
 		if (ImGui::CollapsingHeader("Rendering")) {
 			ImGui::Text("%u triangles", triangleCount);
+			ImGui::Checkbox("Freeze LoD", &freezeLod);
+
 			ImGui::DragFloat("LoD split factor", &splitFactor, .1f);
 			ImGui::DragScalar("Max depth", ImGuiDataType_U32, &maxDepth, 0.1f);
 
@@ -224,18 +203,8 @@ void TerrainRenderer::InspectorWidget(CommandContext& context) {
 				lightDir = normalize(lightDir);
 		}
 
-		if (ImGui::CollapsingHeader("Height function")) {
-			if (!compiling) {
-				ImGui::TextUnformatted(compiledHeightFunction.c_str());
-			}
-		}
-
 		ImGui::Unindent();
 	}
-}
-
-void TerrainRenderer::NodeEditorWidget() {
-	heightFunction.NodeEditorGui();
 }
 
 void TerrainRenderer::PreRender(CommandContext& context, const RenderData& renderData) {
@@ -249,54 +218,60 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 		return;
 	}
 
+	Transform worldToNDC = renderData.projection * renderData.worldToCamera;
+
 	// calculate lod
 	{
 		std::vector<float3> nodeAabbsCpu;
 
-		std::unordered_set<OctreeNode::NodeId> toMerge;
 		const float3 cameraPos = renderData.cameraToWorld.TransformPoint(float3(0));
 		const Transform octToWorld = Transform::Scale(float3(2*scale)) * Transform::Translate(float3(-.5f));
 		octreeRoot.Enumerate([&](OctreeNode& n) {
 			const float3 nodeMin = octToWorld.TransformPoint(n.GetMin());
 			const float3 nodeMax = octToWorld.TransformPoint(n.GetMax());
 
-			const bool containsCamera = glm::all(glm::greaterThan(cameraPos, nodeMin)) && glm::all(glm::lessThan(cameraPos, nodeMax));
-			const float3 toCamera = cameraPos - glm::min(glm::max(cameraPos, nodeMin), nodeMax);
+			if (!freezeLod)
+			{
+				const bool containsCamera = glm::all(glm::greaterThan(cameraPos, nodeMin)) && glm::all(glm::lessThan(cameraPos, nodeMax));
+				const float3 toCamera = cameraPos - glm::min(glm::max(cameraPos, nodeMin), nodeMax);
 
-			bool shouldSplit = containsCamera || length(nodeMax - nodeMin)/length(toCamera) > splitFactor;
+				bool shouldSplit = containsCamera || length(nodeMax - nodeMin)/length(toCamera) > splitFactor;
+				auto meshIt = octreeMeshes.end();
 
-			auto meshIt = octreeMeshes.find(n.GetId());
-			if (shouldSplit && n.IsLeaf() && meshIt != octreeMeshes.end()) {
-				// always join empty nodes
-				const auto& [mesh, dirty] = meshIt->second;
-				if (!dirty && context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady && mesh.drawIndirectArgsCpu[0].indexCount == 0) {
-					shouldSplit = false;
-				}
-			}
+				if (shouldSplit && n.IsLeaf()) {
+					meshIt = octreeMeshes.find(n.GetId());
 
-			if (shouldSplit && n.IsLeaf() && n.GetId().depth < maxDepth) {
-				// destroy node's mesh
-				if (meshIt != octreeMeshes.end()) {
-					cachedMeshes.push(meshIt->second.first, context.GetDevice().NextTimelineSignal());
-					octreeMeshes.erase(meshIt);
-				}
-				// create child nodes
-				n.Split();
-			} else if (!n.IsLeaf() && (!shouldSplit || n.GetId().depth >= maxDepth)) {
-				// destroy node's mesh
-				if (meshIt != octreeMeshes.end()) {
-					cachedMeshes.push(meshIt->second.first, context.GetDevice().NextTimelineSignal());
-					octreeMeshes.erase(meshIt);
-				}
-				// destroy leaf meshes under node
-				n.Enumerate([&](auto& l) {
-					if (auto it = octreeMeshes.find(l.GetId()); it != octreeMeshes.end()) {
-						cachedMeshes.push(it->second.first, context.GetDevice().NextTimelineSignal());
-						octreeMeshes.erase(it);
+					// always join nodes with empty meshes
+					if (meshIt != octreeMeshes.end()) {
+						const auto& [mesh, dirty] = meshIt->second;
+						if (!dirty && context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady && mesh.drawIndirectArgsCpu[0].indexCount == 0) {
+							shouldSplit = false;
+						}
 					}
-				});
-				// destroy child nodes
-				n.Join();
+				}
+
+				auto destroyMesh = [&](auto it) {
+					cachedMeshes.push(it->second.first, context.GetDevice().NextTimelineSignal());
+					octreeMeshes.erase(it);
+				};
+
+				if (shouldSplit && n.IsLeaf() && n.GetId().depth < maxDepth) {
+					// destroy node's mesh
+					if (meshIt != octreeMeshes.end())
+						destroyMesh(meshIt);
+
+					// create child nodes
+					n.Split();
+				} else if (!n.IsLeaf() && (!shouldSplit || n.GetId().depth >= maxDepth)) {
+					// destroy leaf meshes under node
+					n.Enumerate([&](auto& l) {
+						if (auto it = octreeMeshes.find(l.GetId()); it != octreeMeshes.end())
+							destroyMesh(it);
+					});
+
+					// destroy child nodes
+					n.Join();
+				}
 			}
 
 			if (n.IsLeaf() && drawNodeBoxes) {
@@ -311,10 +286,9 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 			}
 		});
 
-		if (drawNodeBoxes) {
+		if (drawNodeBoxes && !nodeAabbsCpu.empty()) {
 			ShaderParameter params = {};
-			params["projection"]    = renderData.projection;
-			params["worldToCamera"] = renderData.worldToCamera;
+			params["worldToNDC"]    = worldToNDC;
 			params["aabbs"]         = nodeAabbsCpu;
 
 			nodeDescriptorSets = context.GetDescriptorSets(*drawNodePipeline->Layout());
@@ -324,8 +298,10 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 
 	// generate terrain mesh
 	{
+		float3 gridScale = 2 * scale / float3(gridSize-1u);
+
 		auto generateMesh = [&](auto& mesh, const float3 cellMin, const float3 cellMax) {
-			mesher->GenerateMesh(context, mesh, gridSize, 2 * scale * (cellMax - cellMin)/float3(gridSize-1u), 2 * scale * (cellMin - float3(0.5f)), {
+			mesher->GenerateMesh(context, mesh, gridScale * (cellMax - cellMin), 2 * scale * (cellMin - float3(0.5f)), {
 				.optimizerIterations = dcIterations,
 				.optimizerStepSize   = dcStepSize,
 				.indirectDispatchGroupSize = 256
@@ -359,7 +335,7 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 				// create mesh for new leaves
 				octreeMeshes[n.GetId()] = std::make_pair(
 					cachedMeshes.pop_or_create(context.GetDevice(), [&](){ return DualContourMesher::ContourMesh(context.GetDevice(), gridSize); }),
-					true
+					true // meshDirty
 				);
 			}
 
@@ -374,8 +350,7 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 	// create descriptor sets for draw
 	{
 		ShaderParameter params = {};
-		params["worldToCamera"] = renderData.worldToCamera;
-		params["projection"]    = renderData.projection;
+		params["worldToNDC"]    = worldToNDC;
 		params["lightDir"]      = lightDir;
 
 		descriptorSets = context.GetDescriptorSets(*drawPipeline->Layout());
@@ -400,12 +375,16 @@ void TerrainRenderer::Render(CommandContext& context, const RenderData& renderDa
 		}
 
 		numNodes++;
-		context->bindVertexBuffers(0, **mesh.vertices.mBuffer, mesh.vertices.mOffset);
+		if (mesh.connectedVertices)
+			context->bindVertexBuffers(0, **mesh.connectedVertices.mBuffer, mesh.connectedVertices.mOffset);
+		else
+			context->bindVertexBuffers(0, **mesh.vertices.mBuffer, mesh.vertices.mOffset);
+
 		context->bindIndexBuffer(**mesh.triangles.mBuffer, mesh.triangles.mOffset, vk::IndexType::eUint32);
 		context->drawIndexedIndirect(**mesh.drawIndirectArgs.mBuffer, mesh.drawIndirectArgs.mOffset, 1, sizeof(VkDrawIndexedIndirectCommand));
 	});
 
-	if (drawNodeBoxes) {
+	if (drawNodeBoxes && numNodes > 0) {
 		context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***drawNodePipeline);
 		context.BindDescriptors(*drawNodePipeline->Layout(), *nodeDescriptorSets);
 		context->draw(24, numNodes, 0, 0);

@@ -6,43 +6,60 @@ namespace RoseEngine {
 
 class DualContourMesher {
 public:
-	inline DualContourMesher(Device& device, const std::string& densityFn) {
-		auto srcFile = FindShaderPath("Contouring.cs.slang");
-		ShaderDefines defs {
-			{ "PROCEDURAL_NODE_SRC", densityFn }
-		};
-		mGenerateCellVertices = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "GenerateCellVertices", "sm_6_7", defs, {}, false));
-		mGenerateTriangles    = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "GenerateTriangles"   , "sm_6_7", defs, {}, false));
-		mCreateIndirectArgs   = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "CreateIndirectArgs"  , "sm_6_7", defs, {}, false));
+	inline DualContourMesher(Device& device, const ShaderDefines& defs = {}) {
+		auto srcFile = FindShaderPath("DualContourMesher.cs.slang");
+		mGenerateCellVertices = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "GenerateCellVertices", "sm_6_7", defs));
+		mConnectNeighbors     = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "ConnectNeighbors",     "sm_6_7", defs));
+		mGenerateTriangles    = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "GenerateTriangles",    "sm_6_7", defs));
+		mCreateIndirectArgs   = Pipeline::CreateCompute(device, ShaderModule::Create(device, srcFile, "CreateIndirectArgs",   "sm_6_7", defs));
 	}
 
 	struct ContourMesh {
 		BufferRange<float3> vertices = {};
+		BufferRange<float3> connectedVertices = {};
 		BufferRange<uint3>  triangles = {};
+		BufferRange<uint> cellVertexIds = {};
+		BufferRange<uint> counters = {};
 		BufferRange<VkDrawIndexedIndirectCommand> drawIndirectArgs = {};
 		// 1 thread per triangle
 		BufferRange<uint3> dispatchIndirectArgs = {};
 		BufferRange<VkDrawIndexedIndirectCommand> drawIndirectArgsCpu = {};
 		uint64_t cpuArgsReady = 0;
+		uint3 gridSize = uint3(0);
 
 		ContourMesh() = default;
 		ContourMesh(const ContourMesh&) = default;
 		ContourMesh(ContourMesh&&) = default;
 		ContourMesh& operator=(const ContourMesh&) = default;
 		ContourMesh& operator=(ContourMesh&&) = default;
-		inline ContourMesh(Device& device, const uint3 gridSize) {
+		inline ContourMesh(Device& device, const uint3 gridSize) : gridSize(gridSize) {
 			const size_t maxVertices = size_t(gridSize.x) * size_t(gridSize.y) * size_t(gridSize.z);
 			const size_t maxTriangles = 6 * (size_t(gridSize.x - 1) * size_t(gridSize.y - 1) * size_t(gridSize.z - 1));
 			vertices  = Buffer::Create(device, sizeof(float3)*maxVertices, vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eVertexBuffer);
 			triangles = Buffer::Create(device, sizeof(uint3)*maxTriangles, vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eIndexBuffer);
+			cellVertexIds = Buffer::Create(device, sizeof(uint)*maxVertices);
+			counters      = Buffer::Create(device, sizeof(uint)*4);
 			drawIndirectArgs = Buffer::Create(device, sizeof(VkDrawIndexedIndirectCommand), vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eIndirectBuffer|vk::BufferUsageFlagBits::eTransferSrc);
 			dispatchIndirectArgs = Buffer::Create(device, sizeof(uint3), vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eIndirectBuffer);
 			drawIndirectArgsCpu  = Buffer::Create(device, sizeof(VkDrawIndexedIndirectCommand), vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
 			device.SetDebugName(**vertices.mBuffer,             "ContourMesh::vertices");
 			device.SetDebugName(**triangles.mBuffer,            "ContourMesh::triangles");
+			device.SetDebugName(**cellVertexIds.mBuffer,        "ContourMesh::cellVertexIds");
+			device.SetDebugName(**counters.mBuffer,             "ContourMesh::counters");
 			device.SetDebugName(**drawIndirectArgs.mBuffer,     "ContourMesh::drawIndirectArgs");
 			device.SetDebugName(**dispatchIndirectArgs.mBuffer, "ContourMesh::dispatchIndirectArgs");
-			device.SetDebugName(**drawIndirectArgsCpu.mBuffer, "ContourMesh::drawIndirectArgsCpu");
+			device.SetDebugName(**drawIndirectArgsCpu.mBuffer,  "ContourMesh::drawIndirectArgsCpu");
+		}
+
+		inline void BindShaderParameters(ShaderParameter& params) const {
+			params["cellVertexIds"]     = (BufferView)cellVertexIds;
+			params["counters"]          = (BufferView)counters;
+			params["vertices"]          = (BufferView)vertices;
+			if (connectedVertices) params["connectedVertices"] = (BufferView)connectedVertices;
+			params["triangles"]         = (BufferView)triangles;
+			params["gridSize"]          = gridSize;
+			params["drawIndirectArgs"]     = (BufferView)drawIndirectArgs;
+			params["dispatchIndirectArgs"] = (BufferView)dispatchIndirectArgs;
 		}
 	};
 
@@ -52,28 +69,17 @@ public:
 		uint32_t indirectDispatchGroupSize = 256;
 	};
 
-	inline void GenerateMesh(CommandContext& context, ContourMesh& mesh, const uint3 gridSize, const float3 gridScale, const float3 gridOffset, const GenerateMeshArgs& args = {}) {
+	inline void GenerateMesh(CommandContext& context, ContourMesh& mesh, const float3 gridScale, const float3 gridOffset, const GenerateMeshArgs& args = {}) {
 		context.PushDebugLabel("DualContourMesher::GenerateMesh");
 
-		BuildData meshData = cached.pop_or_create(context.GetDevice(), [&]() { return BuildData(context.GetDevice(), mesh.vertices.size()); });
-		cached.push(meshData, context.GetDevice().NextTimelineSignal());
-
-		context.Fill(meshData.counters, 0u);
+		context.Fill(mesh.counters, 0u);
 
 		ShaderParameter params = {};
 
-		params["drawIndirectArgs"]     = (BufferView)mesh.drawIndirectArgs;
-		params["dispatchIndirectArgs"] = (BufferView)mesh.dispatchIndirectArgs;
-
-		ShaderParameter& dc = params["dualContouring"];
-		dc["cellVertexIds"] = (BufferView)meshData.cellVertexIds;
-		dc["counters"]      = (BufferView)meshData.counters;
-		dc["vertices"]      = (BufferView)mesh.vertices;
-		dc["triangles"]     = (BufferView)mesh.triangles;
-		dc["gridSize"]   = gridSize;
+		ShaderParameter& dc = params["mesher"];
+		mesh.BindShaderParameters(dc["mesh"]);
 		dc["gridScale"]  = gridScale;
 		dc["gridOffset"] = gridOffset;
-		dc["cellStride"] = 1;
 		dc["schmitzParticleIterations"] = args.optimizerIterations;
 		dc["schmitzParticleStepSize"]   = args.optimizerStepSize;
 
@@ -86,27 +92,28 @@ public:
 		{
 			context->bindPipeline(vk::PipelineBindPoint::eCompute, ***mGenerateCellVertices);
 			context.BindDescriptors(*mGenerateCellVertices->Layout(), *descriptorSets);
-			auto dim = GetDispatchDim(mGenerateCellVertices->GetShader()->WorkgroupSize(), gridSize);
+			auto dim = GetDispatchDim(mGenerateCellVertices->GetShader()->WorkgroupSize(), mesh.gridSize);
 			context->dispatch(dim.x, dim.y, dim.z);
 		}
 
-		context.AddBarrier(meshData.cellVertexIds, Buffer::ResourceState{
+		context.AddBarrier(mesh.cellVertexIds, Buffer::ResourceState{
 			.stage  = vk::PipelineStageFlagBits2::eComputeShader,
-			.access = vk::AccessFlagBits2::eShaderRead|vk::AccessFlagBits2::eShaderWrite,
+			.access = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
 			.queueFamily = context.QueueFamily()
 		});
 		context.ExecuteBarriers();
+
 
 		// Connect vertices in cells to form triangles.
 
 		{
 			context->bindPipeline(vk::PipelineBindPoint::eCompute, ***mGenerateTriangles);
 			context.BindDescriptors(*mGenerateTriangles->Layout(), *descriptorSets);
-			auto dim = GetDispatchDim(mGenerateTriangles->GetShader()->WorkgroupSize(), gridSize - 1u);
+			auto dim = GetDispatchDim(mGenerateTriangles->GetShader()->WorkgroupSize(), mesh.gridSize - 1u);
 			context->dispatch(dim.x, dim.y, dim.z);
 		}
 
-		context.AddBarrier(meshData.counters, Buffer::ResourceState{
+		context.AddBarrier(mesh.counters, Buffer::ResourceState{
 			.stage  = vk::PipelineStageFlagBits2::eComputeShader,
 			.access = vk::AccessFlagBits2::eShaderRead,
 			.queueFamily = context.QueueFamily()
@@ -148,30 +155,62 @@ public:
 		context.PopDebugLabel();
 	}
 
+	inline void UpdateMesh(CommandContext& context, ContourMesh& mesh, const float3 gridScale, const float3 gridOffset, std::array<const ContourMesh*, 6> neighbors, const GenerateMeshArgs& args = {}) {
+		context.PushDebugLabel("DualContourMesher::UpdateMesh");
+
+		ShaderParameter params = {};
+		ShaderParameter& dc = params["mesher"];
+
+		uint8_t neighborMask = 0;
+		for (uint8_t i = 0; i < 6; i++)
+		{
+			if (neighbors[i])
+			{
+				neighbors[i]->BindShaderParameters(dc["neighborMeshes"][i]);
+				neighborMask &= 1 << i;
+			}
+		}
+
+		if (neighborMask == 0)
+			return;
+
+		if (!mesh.connectedVertices)
+		{
+			mesh.connectedVertices = Buffer::Create(context.GetDevice(), mesh.vertices.size_bytes(), vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eVertexBuffer);
+			context.GetDevice().SetDebugName(**mesh.connectedVertices.mBuffer, "ContourMesh::connectedVertices");
+		}
+		else
+			mesh.connectedVertices = {};
+
+		mesh.BindShaderParameters(dc["mesh"]);
+
+		dc["neighborMask"]  = (uint32_t)neighborMask;
+		dc["gridScale"]  = gridScale;
+		dc["gridOffset"] = gridOffset;
+		dc["schmitzParticleIterations"] = args.optimizerIterations;
+		dc["schmitzParticleStepSize"]   = args.optimizerStepSize;
+
+		auto descriptorSets = context.GetDescriptorSets(*mConnectNeighbors->Layout());
+		context.UpdateDescriptorSets(*descriptorSets, params, *mConnectNeighbors->Layout());
+		context.ExecuteBarriers();
+
+		// Merge vertices on LoD borders
+
+		{
+			context->bindPipeline(vk::PipelineBindPoint::eCompute, ***mConnectNeighbors);
+			context.BindDescriptors(*mConnectNeighbors->Layout(), *descriptorSets);
+			auto dim = GetDispatchDim(mConnectNeighbors->GetShader()->WorkgroupSize(), mesh.gridSize);
+			context->dispatch(dim.x, dim.y, dim.z);
+		}
+	}
+
 	inline bool IsStale() const {
 		// all shaders share the same source file
 		return mGenerateCellVertices->GetShader()->IsStale();
 	}
 
 private:
-	ref<Pipeline> mGenerateCellVertices, mGenerateTriangles, mCreateIndirectArgs;
-
-	struct BuildData {
-		BufferRange<uint> cellVertexIds = {};
-		BufferRange<uint> counters = {};
-		BuildData() = default;
-		BuildData(const BuildData&) = default;
-		BuildData(BuildData&&) = default;
-		BuildData& operator=(const BuildData&) = default;
-		BuildData& operator=(BuildData&&) = default;
-		inline BuildData(Device& device, size_t maxVertices) {
-			cellVertexIds = Buffer::Create(device, sizeof(uint)*maxVertices);
-			counters      = Buffer::Create(device, sizeof(uint)*4);
-			device.SetDebugName(**cellVertexIds.mBuffer, "ContourMesh::BuildData::cellVertexIds");
-			device.SetDebugName(**counters.mBuffer,      "ContourMesh::BuildData::counters");
-		}
-	};
-	TransientResourceCache<BuildData> cached = {};
+	ref<Pipeline> mGenerateCellVertices, mConnectNeighbors, mGenerateTriangles, mCreateIndirectArgs;
 };
 
 }

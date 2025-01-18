@@ -39,7 +39,7 @@ public:
 		swapchain = Swapchain::Create(device, *window->GetSurface());
 		context   = CommandContext::Create(device, presentQueueFamily);
 
-		commandSignalSemaphore = vk::raii::Semaphore(**device, vk::SemaphoreCreateInfo{});
+		commandSignalSemaphore = (*device)->createSemaphore(vk::SemaphoreCreateInfo(vk::SemaphoreCreateInfo{}));
 
 		context->Begin();
 

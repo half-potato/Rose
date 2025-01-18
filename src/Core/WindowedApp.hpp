@@ -53,7 +53,8 @@ struct WindowedApp {
 
 		contexts.emplace_back(CommandContext::Create(device, presentQueueFamily));
 
-		commandSignalSemaphore = vk::raii::Semaphore(**device, vk::SemaphoreCreateInfo{});
+		commandSignalSemaphore = (*device)->createSemaphore(vk::SemaphoreCreateInfo{});
+		device->SetDebugName(*commandSignalSemaphore, "WindowedApp Command Signal");
 
 		AddWidget("Memory", [&]() {
 			const bool memoryBudgetExt = device->EnabledExtensions().contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
@@ -161,6 +162,7 @@ struct WindowedApp {
 	}
 	inline ~WindowedApp() {
 		device->Wait();
+		(*device)->waitIdle();
 		Gui::Destroy();
 	}
 

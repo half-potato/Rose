@@ -56,7 +56,7 @@ struct PipelineBindings {
 					if (auto it = setBindingData.find(binding->bindingIndex); it != setBindingData.end()) {
 						auto&[setLayoutBinding, flags, samplers] = it->second;
 						if (setLayoutBinding.descriptorType != vk::DescriptorType::eUniformBuffer)
-							throw std::logic_error("Shader modules contain different descriptors at the same binding index");
+							throw std::logic_error("Shader modules contain different descriptors at the same binding index " + std::to_string(binding->setIndex) + "." + std::to_string(setLayoutBinding.binding));
 						setLayoutBinding.stageFlags |= stage;
 					} else
 						setBindingData.emplace(binding->bindingIndex, DescriptorBindingData{
@@ -98,7 +98,7 @@ struct PipelineBindings {
 					auto&[setLayoutBinding, flags, samplers] = it->second;
 					if (setLayoutBinding.descriptorType  != binding->descriptorType ||
 						setLayoutBinding.descriptorCount != binding->arraySize)
-						throw std::logic_error("Shader modules contain different descriptors at the same binding index");
+						throw std::logic_error("Shader modules contain different descriptors at the same binding index " + std::to_string(binding->setIndex) + "." + std::to_string(setLayoutBinding.binding));
 					setLayoutBinding.stageFlags |= stage;
 				} else {
 					setBindingData.emplace(binding->bindingIndex, DescriptorBindingData{
@@ -118,14 +118,15 @@ struct PipelineBindings {
 };
 
 void PrintBinding(const ShaderParameterBinding& binding, uint32_t depth) {
-	std::cout << " ";
 	if (const auto* c = binding.get_if<ShaderConstantBinding>()) {
 		std::cout << " " << c->setIndex << "." << c->bindingIndex << " ";
 		if (c->pushConstant) std::cout << "Push";
 		std::cout << "Constant";
 		std::cout << " " << c->offset << " + " << c->typeSize;
 	} else if (const auto* c = binding.get_if<ShaderDescriptorBinding>()) {
-		std::cout << c->setIndex << "." << c->bindingIndex << " " << vk::to_string(c->descriptorType);
+		std::cout << " " << c->setIndex << "." << c->bindingIndex << " " << vk::to_string(c->descriptorType);
+	} else if (const auto* c = binding.get_if<ShaderVertexAttributeBinding>()) {
+		std::cout << " : " << c->semantic << c->semanticIndex << " location = " << c->location;
 	}
 	std::cout << std::endl;
 	for (const auto& [name, subBinding] : binding) {
@@ -196,6 +197,7 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::Array
 		createInfo.setBindings(layoutBindings);
 		if (hasFlags) createInfo.setPNext(&bindingFlagsInfo);
 		layout->mDescriptorSetLayouts[i] = make_ref<vk::raii::DescriptorSetLayout>(std::move(device->createDescriptorSetLayout(createInfo)));
+		device.SetDebugName(**layout->mDescriptorSetLayouts[i], shaders.front()->SourceFiles()[0].filename().string() + ":" + shaders.front()->EntryPointName() + ":" + std::to_string(i));
 	}
 
 	// create pipelinelayout from descriptors and pushconstants
@@ -212,6 +214,7 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::Array
 	createInfo.setSetLayouts(vklayouts);
 	createInfo.setPushConstantRanges(pushConstantRanges);
 	layout->mLayout = device->createPipelineLayout(createInfo);
+	device.SetDebugName(*layout->mLayout, shaders.front()->SourceFiles()[0].filename().string() + ":" + shaders.front()->EntryPointName());
 
 	return layout;
 }

@@ -77,13 +77,6 @@ public:
 	inline Coordinate    GetMax() const { return aabbMax; }
 	inline std::span<SubdivisionNode> Children() const { return children ? std::span{ &children[0], ChildCount } : std::span<SubdivisionNode>{}; }
 
-	inline NodeId GetParentId() const {
-		if (id.depth == 0) return id;
-		NodeId p = { id.depth - 1u, id.packedIds };
-		p.SetChildIndex(id.depth, 0); // clear child index
-		return p;
-	}
-
 	template<std::invocable<SubdivisionNode&> F>
 	inline void Enumerate(F&& fn) {
 		std::queue<SubdivisionNode*> todo;
@@ -111,6 +104,22 @@ public:
 			} else {
 				for (uint32_t i = 0; i < ChildCount; i++)
 					todo.push(&n->children[i]);
+			}
+		}
+	}
+
+	template<std::invocable<SubdivisionNode&> F>
+	inline void EnumerateMasked(F&& fn, uint8_t childMask = 0xFF) {
+		std::queue<SubdivisionNode*> todo;
+		todo.push(this);
+		for (;!todo.empty();) {
+			SubdivisionNode* n = todo.front();
+			todo.pop();
+			fn(*n);
+			if (!n->IsLeaf()) {
+				for (uint32_t i = 0; i < ChildCount; i++)
+					if (childMask & (1 << i))
+						todo.push(&n->children[i]);
 			}
 		}
 	}

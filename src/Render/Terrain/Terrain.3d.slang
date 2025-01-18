@@ -4,21 +4,16 @@ import Core.PackedTypes;
 import cbt.leb;
 import voronoise;
 
-#ifdef PROCEDURAL_NODE_SRC
-#define add(a, b) ((a) + (b))
-#define sub(a, b) ((a) - (b))
-PROCEDURAL_NODE_SRC
-#else
-struct ProceduralNodeArgs : IDifferentiable { float3 position; };
-struct ProceduralEvalResult : IDifferentiable { float height; };
 [Differentiable]
-ProceduralEvalResult GetHeight(ProceduralNodeArgs args) { return { 1 }; }
-#endif
+float GetHeight(float3 position)
+{
+	return 1;
+}
+
 
 using namespace RoseEngine;
 
-uniform Transform worldToCamera;
-uniform Transform projection;
+uniform Transform worldToNDC;
 
 uniform float3 lightDir;
 uniform float targetSize;
@@ -38,13 +33,13 @@ float3 GetPosition(float2 uv) {
     float3 p = float3(0.5, uv.y, uv.x);
     p = normalize(p);
 
-    return p * GetHeight({ p }).height;
+    return p * GetHeight(p);
 }
 #else
 [Differentiable]
 float3 GetPosition(float2 uv) {
     float3 p = FromOctahedral(float2(2*uv.x-1, -2*uv.y+1));
-	return p * GetHeight( { p }).height;
+	return p * GetHeight(p);
 }
 #endif
 
@@ -81,7 +76,7 @@ float3x2 GetNodeUvs(const cbt_Node node) {
 float3x4 GetProjectedNodeVertices(const cbt_Node node, const float3x2 uvs) {
     float3x4 verts;
     for (uint i = 0; i < 3; i++) {
-		verts[i] = projection * float4(worldToCamera * GetPosition(uvs[i]), 1);
+		verts[i] = worldToNDC.ProjectPointUnnormalized(GetPosition(uvs[i]));
         verts[i].y = -verts[i].y;
     }
     return verts;

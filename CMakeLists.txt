@@ -6,24 +6,6 @@ project(RoseEngine)
 
 find_package(Vulkan REQUIRED)
 
-# download slang release rom github if it doesnt already exist
-set(SLANG_ROOT "${CMAKE_CURRENT_LIST_DIR}/thirdparty/slang")
-if (NOT EXISTS ${SLANG_ROOT})
-	message(STATUS "Downloading slang")
-	set(SLANG_URL https://github.com/shader-slang/slang/releases/download/v2024.0.14/slang-2024.0.14)
-	if (WIN32)
-		file(DOWNLOAD "${SLANG_URL}-win64.zip" "${SLANG_ROOT}.zip")
-		message(STATUS "Extracting slang")
-		file(ARCHIVE_EXTRACT INPUT "${SLANG_ROOT}.zip" DESTINATION "${SLANG_ROOT}")
-		file(REMOVE "${SLANG_ROOT}.zip")
-	else()
-		file(DOWNLOAD  "${SLANG_URL}-linux-x86_64.zip" "${SLANG_ROOT}.zip")
-		message(STATUS "Extracting slang")
-		file(ARCHIVE_EXTRACT INPUT "${SLANG_ROOT}.zip" DESTINATION "${SLANG_ROOT}")
-		file(REMOVE "${SLANG_ROOT}.zip")
-	endif()
-endif()
-
 # compiler options
 set(CMAKE_CXX_STANDARD 23)
 set(CXX_STANDARD_REQUIRED TRUE)
@@ -42,7 +24,7 @@ link_libraries(glm)
 file(GLOB_RECURSE CORE_SRCS   "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
 file(GLOB_RECURSE RENDER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Render/**.cpp")
 file(GLOB_RECURSE SCENE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Scene/**.cpp")
-file(GLOB IMGUI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
+file(GLOB         IMGUI_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
 add_library(RoseLib
 	${CORE_SRCS}
 	${RENDER_SRCS}
@@ -54,25 +36,15 @@ add_library(RoseLib
 	thirdparty/pugixml.cpp)
 set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
 
-target_link_libraries(RoseLib glfw)
+target_link_libraries(RoseLib glfw $ENV{VULKAN_SDK}/Lib/slang.lib)
 target_include_directories(RoseLib PRIVATE thirdparty/glfw/include thirdparty/glfw/deps)
 
 if(UNIX)
     target_link_libraries(RoseLib pthread ${CMAKE_DL_LIBS} xcb xcb-keysyms)
     add_compile_definitions(VK_USE_PLATFORM_XCB_KHR _GLFW_X11)
-
-	# Link slang
-    target_link_libraries(RoseLib "${SLANG_ROOT}/bin/linux-x64/release/libslang.so")
 elseif(WIN32)
     add_compile_definitions(VK_USE_PLATFORM_WIN32_KHR _GLFW_WIN32 WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS NOMINMAX)
     add_compile_options(/bigobj /MP)
-
-	# Link slang
-    target_link_libraries(RoseLib "${SLANG_ROOT}/bin/windows-x64/release/slang.lib")
-
-	# Copy slang DLLs to output directory
-	configure_file("${SLANG_ROOT}/bin/windows-x64/release/slang-glslang.dll" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang-glslang.dll" COPYONLY)
-	configure_file("${SLANG_ROOT}/bin/windows-x64/release/slang.dll" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang.dll" COPYONLY)
 endif()
 
 find_package(assimp CONFIG)

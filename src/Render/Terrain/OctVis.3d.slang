@@ -1,13 +1,12 @@
 import Render.GBuffer;
 import Scene.Transform;
-import Render.DualContouring.ProceduralVolume;
+import Render.Terrain.Terrain;
 
 using namespace RoseEngine;
 
 ByteAddressBuffer aabbs;
 
-uniform Transform worldToCamera;
-uniform Transform projection;
+uniform Transform worldToNDC;
 
 [shader("vertex")]
 float4 vertexMain(uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID, out float3 color : COLOR0) : SV_Position {
@@ -38,7 +37,7 @@ float4 vertexMain(uint vertexId: SV_VertexID, uint instanceId: SV_InstanceID, ou
 
     color = aabbs.Load<float3>(address + sizeof(float3) * 2);
 
-    float4 clip = (projection * worldToCamera).ProjectPointUnnormalized( lerp(aabbMin, aabbMax, float3(v & 1, (v >> 1) & 1, (v >> 2) & 1)) );
+    float4 clip = worldToNDC.ProjectPointUnnormalized( lerp(aabbMin, aabbMax, float3(v & 1, (v >> 1) & 1, (v >> 2) & 1)) );
     clip.y = -clip.y;
     return clip;
 }

@@ -87,7 +87,11 @@ bool Swapchain::Recreate(vk::SurfaceKHR surface, const std::vector<uint32_t>& qu
 }
 
 bool Swapchain::AcquireImage(const std::chrono::nanoseconds& timeout) {
-	mImageAvailableSemaphore = mCachedSemaphores.pop_or_create(*mDevice, [&]() { return make_ref<vk::raii::Semaphore>(**mDevice, vk::SemaphoreCreateInfo{}); });
+	mImageAvailableSemaphore = mCachedSemaphores.pop_or_create(*mDevice, [&]() {
+		auto s = make_ref<vk::raii::Semaphore>(**mDevice, vk::SemaphoreCreateInfo{});
+		mDevice->SetDebugName(**s, "Image Available");
+		return s;
+	});
 
 	vk::Result result;
 	std::tie(result, mImageIndex) = mSwapchain.acquireNextImage(timeout.count(), **mImageAvailableSemaphore);
