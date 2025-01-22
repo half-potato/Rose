@@ -67,14 +67,22 @@ endif()
 
 configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
 
-add_executable(Rose src/main.cpp)
-target_link_libraries(Rose PRIVATE RoseLib)
+add_executable(SceneApp src/SceneApp.cpp)
+target_link_libraries(SceneApp PRIVATE RoseLib)
+
+add_executable(TerrainApp src/TerrainApp.cpp)
+target_link_libraries(TerrainApp PRIVATE RoseLib)
 
 enable_testing()
 
 add_executable(test_program src/tests/program.cpp)
 target_link_libraries(test_program RoseLib)
 add_test(program bin/test_program)
+set_tests_properties(program PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")
+
+add_executable(test_program_graph src/tests/program_graph.cpp)
+target_link_libraries(test_program_graph RoseLib)
+add_test(program_graph bin/test_program_graph)
 set_tests_properties(program PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")
 
 add_executable(test_mesh src/tests/mesh.cpp)

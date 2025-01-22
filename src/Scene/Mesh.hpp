@@ -67,6 +67,8 @@ struct MeshLayout {
 struct Mesh {
 	MeshVertexAttributes  vertexAttributes = {};
 	BufferView            indexBuffer = {};
+	MeshVertexAttributes  vertexAttributesCpu = {};
+	BufferView            indexBufferCpu = {};
 	uint32_t              indexSize = sizeof(uint32_t);
 	vk::PrimitiveTopology topology = {};
 	vk::AabbPositionsKHR  aabb = {};

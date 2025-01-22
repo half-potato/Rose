@@ -42,6 +42,16 @@ public:
 		parent = newParent;
 	}
 
+	inline void AddChild(const ref<SceneNode>& c) {
+		if (!std::ranges::contains(children, c))
+			children.emplace_back(c);
+	}
+
+	inline void RemoveChild(const SceneNode* c) {
+		if (auto it = std::ranges::find(children, c, &ref<SceneNode>::get); it != children.end())
+			children.erase(it);
+	}
+
 	inline auto begin() { return children.begin(); }
 	inline auto begin() const { return children.begin(); }
 	inline auto end() const { return children.end(); }

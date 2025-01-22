@@ -96,6 +96,8 @@ void main(uint3 index: SV_DispatchThreadID) {
 		float pdf;
 		if (SampleLight(rng, vertex, lightColor, pdf, lightDir))
 			le += material.GetBaseColor() * abs(dot(vertex.shadingNormal, lightDir)) * lightColor / pdf;
+
+        le = material.GetBaseColor();
     } else {
         le = scene.backgroundColor;
         if (scene.backgroundImage < scene.imageCount) {

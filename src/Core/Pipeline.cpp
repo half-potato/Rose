@@ -22,14 +22,21 @@ struct PipelineBindings {
 
 	// inserts bindings in shaderBinding into pipelineBinding
 	void AddBindings(ShaderParameterBinding& pipelineBinding, const ShaderParameterBinding& shaderBinding, const vk::ShaderStageFlagBits stage, const PipelineLayoutInfo& info, uint32_t constantOffset = 0, const std::string parentName = "") {
-		for (const auto&[name, subBinding] : shaderBinding) {
-			auto it = pipelineBinding.find(name);
+		for (const auto&[id, subBinding] : shaderBinding) {
+			auto it = pipelineBinding.find(id);
 			const bool hasBinding = it != pipelineBinding.end();
 			if (!hasBinding) {
-				pipelineBinding[name] = subBinding.raw_variant();  // dont include sub parameters
+				pipelineBinding[id] = subBinding.raw_variant();  // dont include sub parameters
 			}
 
-			std::string fullName = parentName == "" ? name : (parentName + "." + name);
+			// all bindings should have string ids
+			std::string name = std::get<std::string>(id);
+
+			std::string fullName;
+			if (parentName == "")
+				fullName = name;
+			else
+				fullName = parentName + "." + name;
 
 			uint32_t offset = constantOffset;
 
@@ -112,18 +119,26 @@ struct PipelineBindings {
 				}
 			}
 
-			AddBindings(pipelineBinding[name], subBinding, stage, info, offset, fullName);
+			AddBindings(pipelineBinding[id], subBinding, stage, info, offset, fullName);
 		}
 	};
 };
 
 void PrintBinding(const ShaderParameterBinding& binding, uint32_t depth) {
-	if (const auto* c = binding.get_if<ShaderConstantBinding>()) {
+	if (const auto* c = binding.get_if<ShaderStructBinding>()) {
+		if (c->arraySize > 1) {
+			std::cout << "[" << c->arraySize << "]";
+		}
+		std::cout << " descriptor stride: " << c->descriptorStride;
+		std::cout << " uniform stride: " << c->uniformStride;
+	} else if (const auto* c = binding.get_if<ShaderConstantBinding>()) {
+		if (c->arraySize > 1) std::cout << "[" << c->arraySize << "]";
 		std::cout << " " << c->setIndex << "." << c->bindingIndex << " ";
 		if (c->pushConstant) std::cout << "Push";
 		std::cout << "Constant";
-		std::cout << " " << c->offset << " + " << c->typeSize;
+		std::cout << " " << c->typeSize << "B at " << c->offset << "B";
 	} else if (const auto* c = binding.get_if<ShaderDescriptorBinding>()) {
+		if (c->arraySize > 1) std::cout << "[" << c->arraySize << "]";
 		std::cout << " " << c->setIndex << "." << c->bindingIndex << " " << vk::to_string(c->descriptorType);
 	} else if (const auto* c = binding.get_if<ShaderVertexAttributeBinding>()) {
 		std::cout << " : " << c->semantic << c->semanticIndex << " location = " << c->location;

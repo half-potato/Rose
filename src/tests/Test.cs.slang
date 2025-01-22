@@ -17,6 +17,7 @@ void main(uint3 index: SV_DispatchThreadID) {
     v = v * scale2 + offset2;
     data[index.x] = v;
 
+
     if (index.x == 0) {
 		printf("scale = %0.2f\n", scale);
         printf("offset = %0.2f\n", offset);

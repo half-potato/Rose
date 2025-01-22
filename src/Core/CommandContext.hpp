@@ -177,7 +177,7 @@ public:
 		auto b = buffer.SetState(newState);
 		if (oldState.access == vk::AccessFlagBits2::eNone || newState.access == vk::AccessFlagBits2::eNone)
 			return;
-		//if (!(oldState.access & gWriteAccesses) && !(newState.access & gWriteAccesses))
+		//if (((oldState.access & gWriteAccesses) == 0) && (newState.access & gWriteAccesses) == 0)
 		//	return; // remove read-read buffer barriers
 
 		if (b.dstQueueFamilyIndex == VK_QUEUE_FAMILY_IGNORED && b.srcQueueFamilyIndex != VK_QUEUE_FAMILY_IGNORED)

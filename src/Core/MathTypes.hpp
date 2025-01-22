@@ -68,8 +68,8 @@ inline uint2 asuint(float2 v) { return std::bit_cast<uint2>(v); }
 inline uint3 asuint(float3 v) { return std::bit_cast<uint3>(v); }
 inline uint4 asuint(float4 v) { return std::bit_cast<uint4>(v); }
 
-template<glm::length_t L, typename T, glm::qualifier Q> inline T min(const glm::vec<L, T, Q>& a,const glm::vec<L, T, Q>& b) { return glm::min<T>(a, b); }
-template<glm::length_t L, typename T, glm::qualifier Q> inline T max(const glm::vec<L, T, Q>& a,const glm::vec<L, T, Q>& b) { return glm::max<T>(a, b); }
+//template<glm::length_t L, typename T, glm::qualifier Q> inline T min(const glm::vec<L, T, Q>& a,const glm::vec<L, T, Q>& b) { return glm::min<T>(a, b); }
+//template<glm::length_t L, typename T, glm::qualifier Q> inline T max(const glm::vec<L, T, Q>& a,const glm::vec<L, T, Q>& b) { return glm::max<T>(a, b); }
 template<typename T> inline T saturate(const T& a) { return glm::clamp<T>(a, T(0), T(1)); }
 template<typename T> inline T lerp(const T& a, const T& b, const auto& u) { return glm::mix(a, b, u); }
 

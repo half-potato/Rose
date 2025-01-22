@@ -15,14 +15,10 @@ struct TerrainSample : IDifferentiable
 };
 
 [Differentiable]
-TerrainSample SampleTerrain(TerrainSampleArgs args)
-{
-	float vn = 0;//2*voronoise(3*args.position);
-
-	float3 p = args.position + 10;
-	float h = 1;// + map4(1.5*(p + 2*map4(2*p)));
-
-	return { vn + h - length(args.position) };
+TerrainSample SampleTerrain(TerrainSampleArgs args) {
+    float3 p = args.position + 10;
+    float h = 0.5 + 0.5*map4(3*p + 3*map4(4*p));
+	return { h - length(args.position) };
 }
 
 struct Terrain

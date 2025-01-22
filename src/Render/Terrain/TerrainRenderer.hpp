@@ -23,17 +23,23 @@ private:
 	bool   wire = false;
 	bool   showBackfaces = false;
 	bool   drawNodeBoxes = false;
+	bool   lodStitching = true;
+	float  errorThreshold = 1.f;
 
 	uint3    gridSize = uint3(16,16,16);
-	float    scale = 1.f;
 	uint32_t dcIterations = 20;
 	float    dcStepSize = 0.2f;
-	float    splitFactor = 100.f;
 	ref<DualContourMesher> mesher = {};
+
+	enum OctreeMeshFlags : uint32_t {
+		eNone      = 0,
+		eMeshDirty = 1,
+		eLoDDirty  = 2
+	};
 
 	uint32_t maxDepth = 0;
 	OctreeNode octreeRoot = {};
-	std::unordered_map<OctreeNode::NodeId, std::pair<DualContourMesher::ContourMesh, bool>> octreeMeshes = {};
+	std::unordered_map<OctreeNode::NodeId, std::pair<DualContourMesher::ContourMesh, uint32_t>> octreeMeshes = {};
 	TransientResourceCache<DualContourMesher::ContourMesh> cachedMeshes = {};
 	bool freezeLod = false;
 

@@ -39,11 +39,21 @@ private:
 		if (ImGui::IsItemClicked())
 			selected = n->shared_from_this();
 
+		if (ImGui::BeginPopupContextWindow()) {
+			bool deleted = false;
+			if (ImGui::Selectable("Delete")) {
+				if (n->GetParent()) {
+					n->GetParent()->RemoveChild(n);
+					deleted = true;
+				}
+			}
+			ImGui::EndPopup();
+			if (deleted) return;
+		}
+
 		if (open) {
 			for (const ref<SceneNode>& c : *n)
-				SceneNodeTreeGui(
-					c.get(),
-					selected_ptr);
+				SceneNodeTreeGui(c.get(), selected_ptr);
 
 			ImGui::TreePop();
 		}
@@ -58,7 +68,7 @@ public:
 
 	inline void LoadScene(CommandContext& context) {
 		auto f = pfd::open_file("Open scene", "", {
-			"All files (.*)", "*.*",
+			//"All files (.*)", "*.*",
 			"glTF Scenes (.gltf .glb)", "*.gltf *.glb",
 			"Environment maps (.exr .hdr .dds .png .jpg)", "*.exr *.hdr *.dds *.png *.jpg",
 		});
@@ -97,9 +107,9 @@ public:
 	}
 
 	inline void SceneGraphWidget() {
-		if (scene && scene->GetScene()) {
+		if (scene && scene->GetSceneRoot()) {
 			SceneNode* sel_p = selected.lock().get();
-			for (const ref<SceneNode>& c : *scene->GetScene())
+			for (const ref<SceneNode>& c : *scene->GetSceneRoot())
 				SceneNodeTreeGui(c.get(), sel_p);
 		}
 	}

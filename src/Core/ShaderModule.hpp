@@ -14,6 +14,11 @@ namespace RoseEngine {
 
 #define FindShaderPath(name) (std::filesystem::path(std::source_location::current().file_name()).parent_path() / name)
 
+struct ShaderStructBinding {
+	uint32_t arraySize        = 1;
+	uint32_t descriptorStride = 0;
+	uint32_t uniformStride    = 0;
+};
 struct ShaderDescriptorBinding {
 	vk::DescriptorType descriptorType = {};
 	uint32_t           setIndex = 0;
@@ -30,6 +35,7 @@ struct ShaderConstantBinding {
 	uint32_t typeSize = 0;
 	uint32_t setIndex = 0;
 	uint32_t bindingIndex = 0;
+	uint32_t arraySize = 1;
 	bool     pushConstant = false;
 
 	bool operator==(const ShaderConstantBinding& rhs) const = default;
@@ -44,8 +50,9 @@ struct ShaderVertexAttributeBinding {
 	bool operator!=(const ShaderVertexAttributeBinding& rhs) const = default;
 };
 
+
 using ShaderParameterBinding = ParameterMap<
-	std::monostate,
+	ShaderStructBinding,
 	ShaderDescriptorBinding,
 	ShaderConstantBinding,
 	ShaderVertexAttributeBinding >;

@@ -159,6 +159,14 @@ ref<DescriptorSets> CommandContext::GetDescriptorSets(const PipelineLayout& pipe
 	return descriptorSets;
 }
 
+uint32_t align16(uint32_t s) {
+	s = (s + 3)&(~3);
+	if (s*4 == 12) {
+		s += 4;
+	}
+	return s;
+};
+
 struct DescriptorSetWriter {
 	union DescriptorInfo {
 		vk::DescriptorBufferInfo buffer;
@@ -176,68 +184,89 @@ struct DescriptorSetWriter {
 
 	vk::PipelineStageFlags2 stage = vk::PipelineStageFlagBits2::eComputeShader;
 
-	vk::WriteDescriptorSet WriteDescriptor(const ShaderDescriptorBinding& binding, uint32_t arrayIndex) {
+	vk::WriteDescriptorSet WriteDescriptor(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, uint32_t bindingOffset) {
 		return vk::WriteDescriptorSet{
 			.dstSet = descriptorSets[binding.setIndex],
-			.dstBinding = binding.bindingIndex,
+			.dstBinding = binding.bindingIndex + bindingOffset,
 			.dstArrayElement = arrayIndex,
 			.descriptorCount = 1,
 			.descriptorType = binding.descriptorType };
 	}
-	void WriteBuffer(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, const vk::DescriptorBufferInfo& data) {
-		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex));
+	void WriteBuffer(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, uint32_t bindingOffset, const vk::DescriptorBufferInfo& data) {
+		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex, bindingOffset));
 		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
 		info.buffer = data;
 		w.setBufferInfo(info.buffer);
 	}
-	void WriteImage(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, const vk::DescriptorImageInfo& data) {
-		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex));
+	void WriteImage(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, uint32_t bindingOffset, const vk::DescriptorImageInfo& data) {
+		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex, bindingOffset));
 		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
 		info.image = data;
 		w.setImageInfo(info.image);
 	}
-	void WriteAccelerationStructure(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, const vk::WriteDescriptorSetAccelerationStructureKHR& data) {
-		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex));
+	void WriteAccelerationStructure(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, uint32_t bindingOffset, const vk::WriteDescriptorSetAccelerationStructureKHR& data) {
+		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex, bindingOffset));
 		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
 		info.accelerationStructure = data;
 		w.setPNext(&info);
 	}
 
-	void Write(CommandContext& context, const ShaderParameter& parameter, const ShaderParameterBinding& binding, uint32_t constantOffset = 0) {
-		for (const auto&[name, param] : parameter) {
+	void Write(CommandContext& context, const ShaderParameter& parameter, const ShaderParameterBinding& binding, uint32_t constantOffset = 0, uint32_t bindingOffset = 0) {
+		for (const auto&[id, param] : parameter) {
 			uint32_t arrayIndex = 0;
 
-			bool isArrayElement = std::ranges::all_of(name, [](char c){ return std::isdigit(c); });
+			bool isArrayElement = std::holds_alternative<size_t>(id);
 			if (isArrayElement) {
-				arrayIndex = std::stoi(name);
-				if (const auto* desc = binding.get_if<ShaderDescriptorBinding>()) {
-					if (arrayIndex >= desc->arraySize) {
-						std::cout << "Warning array index " << arrayIndex << " which is out of bounds for array size " << desc->arraySize << std::endl;
-					}
+				arrayIndex = std::get<size_t>(id);
+				uint32_t arraySize = std::visit(
+					overloads {
+						[](const ShaderStructBinding& b) { return b.arraySize; },
+						[](const ShaderDescriptorBinding& b) { return b.arraySize; },
+						[](const ShaderConstantBinding& b) { return b.arraySize; },
+						[](const ShaderVertexAttributeBinding& b) { return 1u; },
+					},
+					binding.raw_variant());
+				if (arrayIndex >= arraySize) {
+					std::cout << "Warning array index " << arrayIndex << " which is out of bounds for array size " << arraySize << std::endl;
 				}
-			}
-			if (!isArrayElement && binding.find(name) == binding.end()) {
-				std::cout << "Error: No parameter " << name << " exists in pipeline." << std::endl;
+			} else if (binding.find(id) == binding.end()) {
+				std::cout << "Error: No parameter " << id << " exists in pipeline." << std::endl;
 				//PrintBinding(binding);
 			}
-			const auto& paramBinding = isArrayElement ? binding : binding.at(name);
+
+			const ShaderParameterBinding& paramBinding = isArrayElement ? binding : binding.at(id);
 
 			uint32_t offset = constantOffset;
 
-			if (param.holds_alternative<std::monostate>()) {
-
+			if (const auto* v = param.get_if<std::monostate>()) {
+				if (const auto* binding = paramBinding.get_if<ShaderStructBinding>()) {
+					if (isArrayElement) {
+						if (arrayIndex >= binding->arraySize) {
+							std::cout << "Warning: Array index out of bounds (" << arrayIndex << " >= " << binding->arraySize << ")" << std::endl;
+							continue;
+						} else {
+							bindingOffset  += binding->descriptorStride * arrayIndex;
+							constantOffset += binding->uniformStride * arrayIndex;
+						}
+					}
+				}
 			} else if (const auto* v = param.get_if<ConstantParameter>()) {
 				if (const auto* constantBinding = paramBinding.get_if<ShaderConstantBinding>()) {
 					// binding a constant to a variable inside a uniform buffer/push constant
-					if (v->size() > constantBinding->typeSize)
-						std::cout << "Warning: Binding constant parameter of size " << v->size() << " to binding of size " << constantBinding->typeSize << std::endl;
+					{
+						uint32_t bindingSize = constantBinding->typeSize;
+						if (!isArrayElement) bindingSize *= constantBinding->arraySize;
+						if (v->size() > bindingSize)
+							std::cout << "Warning: Binding constant parameter of size " << v->size() << " to binding of size " << bindingSize << std::endl;
+					}
 
 					offset += constantBinding->offset;
+					offset += arrayIndex * align16(constantBinding->typeSize);
 
 					if (constantBinding->pushConstant) {
 						pushConstants.emplace_back(offset, *v);
 					} else {
-						auto& u = uniforms[{constantBinding->setIndex, constantBinding->bindingIndex}];
+						auto& u = uniforms[{constantBinding->setIndex, constantBinding->bindingIndex + bindingOffset}];
 						if (offset + v->size() > u.size())
 							u.resize(offset + v->size());
 						std::memcpy(u.data() + offset, v->data(), v->size());
@@ -250,7 +279,7 @@ struct DescriptorSetWriter {
 							.stage  = stage,
 							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
 							.queueFamily = context.QueueFamily() });
-						WriteBuffer(*descriptorBinding, arrayIndex, vk::DescriptorBufferInfo{
+						WriteBuffer(*descriptorBinding, arrayIndex, bindingOffset, vk::DescriptorBufferInfo{
 							.buffer = **buffer.mBuffer,
 							.offset = buffer.mOffset,
 							.range  = buffer.size() });
@@ -265,9 +294,9 @@ struct DescriptorSetWriter {
 						if (buffer.empty()) continue;
 						context.AddBarrier(*v, Buffer::ResourceState{
 							.stage  = stage,
-							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead,
 							.queueFamily = context.QueueFamily() });
-						WriteBuffer(*descriptorBinding, arrayIndex, vk::DescriptorBufferInfo{
+						WriteBuffer(*descriptorBinding, arrayIndex, bindingOffset, vk::DescriptorBufferInfo{
 							.buffer = **buffer.mBuffer,
 							.offset = buffer.mOffset,
 							.range  = buffer.size() });
@@ -279,14 +308,14 @@ struct DescriptorSetWriter {
 							.stage  = stage,
 							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
 							.queueFamily = context.QueueFamily() });
-						WriteImage(*descriptorBinding, arrayIndex, vk::DescriptorImageInfo{
+						WriteImage(*descriptorBinding, arrayIndex, bindingOffset, vk::DescriptorImageInfo{
 							.sampler     = sampler ? **sampler : nullptr,
 							.imageView   = image   ? *image    : nullptr,
 							.imageLayout = layout });
 					} else if (const auto* v = param.get_if<AccelerationStructureParameter>()) {
 						const auto& as = *v;
 						if (!as) continue;
-						WriteAccelerationStructure(*descriptorBinding, arrayIndex, vk::WriteDescriptorSetAccelerationStructureKHR{}.setAccelerationStructures(**as));
+						WriteAccelerationStructure(*descriptorBinding, arrayIndex, bindingOffset, vk::WriteDescriptorSetAccelerationStructureKHR{}.setAccelerationStructures(**as));
 					}
 				} else {
 					std::cout << "Warning: Attempting to bind descriptor parameter to non-descriptor binding" << std::endl;
@@ -300,6 +329,8 @@ struct DescriptorSetWriter {
 
 size_t GetDescriptorCount(const ShaderParameterBinding& param) {
 	size_t count = 0;
+	if (const auto* b = param.get_if<ShaderStructBinding>())
+		count = b->arraySize * b->descriptorStride;
 	if (const auto* b = param.get_if<ShaderDescriptorBinding>())
 		count = b->arraySize;
 	if (const auto* b = param.get_if<ShaderConstantBinding>())
@@ -338,7 +369,7 @@ void CommandContext::UpdateDescriptorSets(const DescriptorSets& descriptorSets, 
 				.descriptorType = vk::DescriptorType::eUniformBuffer,
 				.setIndex = setIndex,
 				.bindingIndex = bindingIndex },
-			0,
+			0, 0,
 			vk::DescriptorBufferInfo{
 				.buffer = **buffer.mBuffer,
 				.offset = buffer.mOffset,
@@ -350,18 +381,24 @@ void CommandContext::UpdateDescriptorSets(const DescriptorSets& descriptorSets, 
 }
 
 void PushConstants(const CommandContext& context, const PipelineLayout& pipelineLayout, const ShaderParameter& parameter, const ShaderParameterBinding& binding, uint32_t constantOffset = 0) {
-	for (const auto&[name, param] : parameter) {
+	for (const auto&[id, param] : parameter) {
 		uint32_t arrayIndex = 0;
-		bool isArrayElement = std::ranges::all_of(name, [](char c){ return std::isdigit(c); });
+		bool isArrayElement = std::holds_alternative<size_t>(id);
 		if (isArrayElement) {
-			arrayIndex = std::stoi(name);
-			if (const auto* desc = binding.get_if<ShaderDescriptorBinding>()) {
-				if (arrayIndex >= desc->arraySize) {
-					std::cout << "Warning array index " << arrayIndex << " which is out of bounds for array size " << desc->arraySize << std::endl;
-				}
+			arrayIndex = std::get<size_t>(id);
+			uint32_t arraySize = std::visit(
+				overloads {
+					[](const ShaderStructBinding& b) { return b.arraySize; },
+					[](const ShaderDescriptorBinding& b) { return b.arraySize; },
+					[](const ShaderConstantBinding& b) { return b.arraySize; },
+					[](const ShaderVertexAttributeBinding& b) { return 1u; },
+				},
+				binding.raw_variant());
+			if (arrayIndex >= arraySize) {
+				std::cout << "Warning array index " << arrayIndex << " which is out of bounds for array size " << arraySize << std::endl;
 			}
 		}
-		const auto& paramBinding = isArrayElement ? binding : binding.at(name);
+		const ShaderParameterBinding& paramBinding = isArrayElement ? binding : binding.at(id);
 
 		uint32_t offset = constantOffset;
 
@@ -369,10 +406,15 @@ void PushConstants(const CommandContext& context, const PipelineLayout& pipeline
 			if (const auto* constantBinding = paramBinding.get_if<ShaderConstantBinding>()) {
 				if (!constantBinding->pushConstant)
 					continue;
-				if (v->size() > constantBinding->typeSize)
-					std::cout << "Warning: Binding constant parameter of size " << v->size() << " to binding of size " << constantBinding->typeSize << std::endl;
+				{
+					uint32_t bindingSize = constantBinding->typeSize;
+					if (!isArrayElement) bindingSize *= constantBinding->arraySize;
+					if (v->size() > bindingSize)
+						std::cout << "Warning: Binding constant parameter of size " << v->size() << " to binding of size " << bindingSize << std::endl;
+				}
 
 				offset += constantBinding->offset;
+				offset += arrayIndex * align16(constantBinding->typeSize);
 
 				if (constantBinding->pushConstant)
 					context->pushConstants<std::byte>(**pipelineLayout, pipelineLayout.ShaderStageMask(), offset, *v);

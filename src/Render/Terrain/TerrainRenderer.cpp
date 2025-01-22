@@ -172,7 +172,6 @@ void TerrainRenderer::InspectorWidget(CommandContext& context) {
 
 		if (ImGui::CollapsingHeader("Dual contouring")) {
 			bool meshDirty = false;
-			meshDirty |= ImGui::DragFloat("Scale", &scale, .1f, 0, 100);
 			meshDirty |= ImGui::DragScalarN("Grid size", ImGuiDataType_U32, &gridSize.x, 3);
 			gridSize = glm::clamp(gridSize, uint3(2u), uint3(16384u));
 			ImGui::Separator();
@@ -188,11 +187,10 @@ void TerrainRenderer::InspectorWidget(CommandContext& context) {
 
 		if (ImGui::CollapsingHeader("Rendering")) {
 			ImGui::Text("%u triangles", triangleCount);
-			ImGui::Checkbox("Freeze LoD", &freezeLod);
-
-			ImGui::DragFloat("LoD split factor", &splitFactor, .1f);
 			ImGui::DragScalar("Max depth", ImGuiDataType_U32, &maxDepth, 0.1f);
-
+			ImGui::DragFloat("LoD split threshold", &errorThreshold);
+			ImGui::Checkbox("LoD stitching", &lodStitching);
+			ImGui::Checkbox("Freeze LoD", &freezeLod);
 			if (ImGui::Checkbox("Wire", &wire))
 				pipelineFormat = vk::Format::eUndefined;
 			if (ImGui::Checkbox("Show backfaces", &showBackfaces))
@@ -224,42 +222,61 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 	{
 		std::vector<float3> nodeAabbsCpu;
 
-		const float3 cameraPos = renderData.cameraToWorld.TransformPoint(float3(0));
-		const Transform octToWorld = Transform::Scale(float3(2*scale)) * Transform::Translate(float3(-.5f));
-		octreeRoot.Enumerate([&](OctreeNode& n) {
-			const float3 nodeMin = octToWorld.TransformPoint(n.GetMin());
-			const float3 nodeMax = octToWorld.TransformPoint(n.GetMax());
-
-			if (!freezeLod)
-			{
-				const bool containsCamera = glm::all(glm::greaterThan(cameraPos, nodeMin)) && glm::all(glm::lessThan(cameraPos, nodeMax));
-				const float3 toCamera = cameraPos - glm::min(glm::max(cameraPos, nodeMin), nodeMax);
-
-				bool shouldSplit = containsCamera || length(nodeMax - nodeMin)/length(toCamera) > splitFactor;
-				auto meshIt = octreeMeshes.end();
-
-				if (shouldSplit && n.IsLeaf()) {
-					meshIt = octreeMeshes.find(n.GetId());
-
-					// always join nodes with empty meshes
-					if (meshIt != octreeMeshes.end()) {
-						const auto& [mesh, dirty] = meshIt->second;
-						if (!dirty && context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady && mesh.drawIndirectArgsCpu[0].indexCount == 0) {
-							shouldSplit = false;
+		// mark neighbor leaf nodes below n.depth as loddirty
+		auto setNeighborLoDDirty = [&](OctreeNode& n) {
+			auto search = [&](OctreeNodeId neighborId, uint32_t axis) {
+				OctreeNode& neighbor = octreeRoot.Decode(neighborId);
+				if (neighbor.GetId() == neighborId && !neighbor.IsLeaf()) {
+					uint32_t dir = (neighborId.index[axis] > n.GetId().index[axis]) ? 0 : 1;
+					uint8_t mask = 0;
+					for (uint32_t i = 0; i < 8; i++)
+						if (((i >> axis)&1) == dir)
+							mask |= 1 << i;
+					neighbor.EnumerateMasked([&](OctreeNode& ni) {
+						if (ni.IsLeaf()) {
+							if (auto it = octreeMeshes.find(ni.GetId()); it != octreeMeshes.end())
+								it->second.second |= OctreeMeshFlags::eLoDDirty;
 						}
+					}, mask);
+				}
+			};
+
+			for (uint axis = 0; axis < 3; axis++) {
+				OctreeNodeId neighborId = n.GetId().GetInnerNeighbor(axis);
+				search(neighborId, axis);
+				if (n.GetId().GetOuterNeighbor(axis, neighborId))
+					search(neighborId, axis);
+			}
+		};
+
+		auto destroyMesh = [&](auto it) {
+			cachedMeshes.push(it->second.first, context.GetDevice().NextTimelineSignal());
+			octreeMeshes.erase(it);
+		};
+
+		const float3 cameraPos = renderData.cameraToWorld.TransformPoint(float3(0));
+		octreeRoot.Enumerate([&](OctreeNode& n) {
+			const float3 nodeMin = n.GetMin()*2.f - 1.f;
+			const float3 nodeMax = n.GetMax()*2.f - 1.f;
+
+			if (!freezeLod) {
+				const float3 toCamera = cameraPos - glm::clamp(cameraPos, nodeMin, nodeMax);
+
+				bool shouldSplit = false;
+				if (auto meshIt = octreeMeshes.find(n.GetId()); meshIt != octreeMeshes.end()) {
+					const auto& [mesh, dirty] = meshIt->second;
+					if (!dirty && context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady) {
+						// always join nodes with empty meshes
+						if (mesh.drawIndirectArgsCpu[0].indexCount == 0)
+							shouldSplit = false;
+
+						if (mesh.avgErrorCpu[0] >= errorThreshold*length(toCamera))
+							shouldSplit = true;
 					}
 				}
 
-				auto destroyMesh = [&](auto it) {
-					cachedMeshes.push(it->second.first, context.GetDevice().NextTimelineSignal());
-					octreeMeshes.erase(it);
-				};
-
 				if (shouldSplit && n.IsLeaf() && n.GetId().depth < maxDepth) {
-					// destroy node's mesh
-					if (meshIt != octreeMeshes.end())
-						destroyMesh(meshIt);
-
+					setNeighborLoDDirty(n);
 					// create child nodes
 					n.Split();
 				} else if (!n.IsLeaf() && (!shouldSplit || n.GetId().depth >= maxDepth)) {
@@ -271,18 +288,22 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 
 					// destroy child nodes
 					n.Join();
+
+					setNeighborLoDDirty(n);
 				}
 			}
 
-			if (n.IsLeaf() && drawNodeBoxes) {
-				if (auto it = octreeMeshes.find(n.GetId()); it != octreeMeshes.end()) {
-					const auto& [mesh, dirty] = it->second;
-					if (context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady && mesh.drawIndirectArgsCpu[0].indexCount == 0)
-						return;
+			if (n.IsLeaf()) {
+				if (drawNodeBoxes) {
+					if (auto it = octreeMeshes.find(n.GetId()); it != octreeMeshes.end()) {
+						const auto& [mesh, dirty] = it->second;
+						if (context.GetDevice().CurrentTimelineValue() >= mesh.cpuArgsReady && mesh.drawIndirectArgsCpu[0].indexCount == 0)
+							return;
+					}
+					nodeAabbsCpu.emplace_back(nodeMin);
+					nodeAabbsCpu.emplace_back(nodeMax);
+					nodeAabbsCpu.emplace_back(viridis(saturate(n.GetId().depth/max(1.f,float(maxDepth)))));
 				}
-				nodeAabbsCpu.emplace_back(nodeMin);
-				nodeAabbsCpu.emplace_back(nodeMax);
-				nodeAabbsCpu.emplace_back(viridis(saturate(n.GetId().depth/max(1.f,float(maxDepth)))));
 			}
 		});
 
@@ -298,10 +319,12 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 
 	// generate terrain mesh
 	{
-		float3 gridScale = 2 * scale / float3(gridSize-1u);
+		float3 gridScale = 1.f / float3(gridSize);
 
-		auto generateMesh = [&](auto& mesh, const float3 cellMin, const float3 cellMax) {
-			mesher->GenerateMesh(context, mesh, gridScale * (cellMax - cellMin), 2 * scale * (cellMin - float3(0.5f)), {
+		auto generateMesh = [&](auto& mesh, const OctreeNode& n) {
+			float3 cellMin = n.GetMin()*2.f - 1.f;
+			float3 cellMax = n.GetMax()*2.f - 1.f;
+			mesher->GenerateMesh(context, mesh, gridSize, cellMin, cellMax, {
 				.optimizerIterations = dcIterations,
 				.optimizerStepSize   = dcStepSize,
 				.indirectDispatchGroupSize = 256
@@ -329,20 +352,77 @@ void TerrainRenderer::PreRender(CommandContext& context, const RenderData& rende
 			});
 		};
 
+		// get lower-depth neighbors along each axis, if any
+		auto getNeighbors = [&](const OctreeNode& n) {
+			std::array<const DualContourMesher::ContourMesh*, 3> neighbors {
+				nullptr,
+				nullptr,
+				nullptr,
+			};
+			std::array<OctreeNodeId, 3> neighborIds {
+				OctreeNodeId{{0,0,0},0},
+				OctreeNodeId{{0,0,0},0},
+				OctreeNodeId{{0,0,0},0}
+			};
+			OctreeNodeId nid = n.GetId();
+			if (nid.depth > 1) {
+				for (uint32_t axis = 0; axis < 3; axis++) {
+					OctreeNodeId neighbor;
+					if (nid.GetOuterNeighbor(axis, neighbor)) {
+						// decode parent of outer neighbor
+						// note: decode *can* return a node closer to the root
+						neighbor = octreeRoot.Decode(neighbor.GetParent()).GetId();
+						if (auto it = octreeMeshes.find(neighbor); it != octreeMeshes.end()) {
+							const auto&[mesh,flags] = it->second;
+							if ((flags & OctreeMeshFlags::eMeshDirty) == 0) {
+								neighbors[axis] = &mesh;
+								neighborIds[axis] = neighbor;
+							}
+						}
+					}
+				}
+			}
+
+			return std::pair{neighbors, neighborIds};
+		};
+
+		auto updateLoD = [&](auto& mesh, const OctreeNode& n) {
+			float3 cellMin = n.GetMin()*2.f - 1.f;
+			float3 cellMax = n.GetMax()*2.f - 1.f;
+			auto [neighbors, neighborIds] = getNeighbors(n);
+			mesher->Stitch(context, mesh, gridSize, cellMin, cellMax, neighbors, neighborIds, n.GetId(), {
+				.optimizerIterations = dcIterations,
+				.optimizerStepSize   = dcStepSize,
+				.indirectDispatchGroupSize = 256
+			});
+			if (mesh.connectedVertices)
+				context.AddBarrier(mesh.connectedVertices, Buffer::ResourceState{
+					.stage = vk::PipelineStageFlagBits2::eVertexInput,
+					.access = vk::AccessFlagBits2::eVertexAttributeRead,
+					.queueFamily = context.QueueFamily(),
+				});
+		};
+
 		// generate meshes at leaf nodes
-		octreeRoot.EnumerateLeaves([&](auto& n) {
+		octreeRoot.EnumerateLeaves([&](OctreeNode& n) {
 			if (!octreeMeshes.contains(n.GetId())) {
 				// create mesh for new leaves
 				octreeMeshes[n.GetId()] = std::make_pair(
 					cachedMeshes.pop_or_create(context.GetDevice(), [&](){ return DualContourMesher::ContourMesh(context.GetDevice(), gridSize); }),
-					true // meshDirty
+					OctreeMeshFlags::eMeshDirty|OctreeMeshFlags::eLoDDirty
 				);
 			}
 
-			auto& [mesh, meshDirty] = octreeMeshes.at(n.GetId());
-			if (meshDirty) {
-				generateMesh(mesh, n.GetMin(), n.GetMax());
-				meshDirty = false;
+			auto& [mesh, flags] = octreeMeshes.at(n.GetId());
+			if ((flags & OctreeMeshFlags::eMeshDirty) != 0) {
+				generateMesh(mesh, n);
+				flags &= ~OctreeMeshFlags::eMeshDirty;
+			}
+			if (lodStitching) {
+				if ((flags & OctreeMeshFlags::eLoDDirty) != 0) {
+					updateLoD(mesh, n);
+					flags &= ~OctreeMeshFlags::eLoDDirty;
+				}
 			}
 		});
 	}
@@ -375,7 +455,7 @@ void TerrainRenderer::Render(CommandContext& context, const RenderData& renderDa
 		}
 
 		numNodes++;
-		if (mesh.connectedVertices)
+		if (lodStitching && mesh.connectedVertices)
 			context->bindVertexBuffers(0, **mesh.connectedVertices.mBuffer, mesh.connectedVertices.mOffset);
 		else
 			context->bindVertexBuffers(0, **mesh.vertices.mBuffer, mesh.vertices.mOffset);

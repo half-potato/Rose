@@ -23,6 +23,7 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 
 	Device& device = context.GetDevice();
 
+	std::vector<BufferView>               buffersCpu(model.buffers.size());
 	std::vector<BufferView>               buffers  (model.buffers.size());
 	std::vector<ImageView>                images   (model.images.size());
 	std::vector<std::vector<ref<Mesh>>>   meshes   (model.meshes.size());
@@ -35,9 +36,26 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 	}
 
 	std::cout << "Loading buffers..." << std::endl;
-	std::ranges::transform(model.buffers, buffers.begin(), [&](const tinygltf::Buffer& buffer) {
-		return context.UploadData(buffer.data, bufferUsage);
-	});
+	for (size_t i = 0; i < buffers.size(); i++) {
+		buffersCpu[i] = Buffer::Create(
+			context.GetDevice(),
+			model.buffers[i].data.size(),
+			vk::BufferUsageFlagBits::eTransferSrc,
+			vk::MemoryPropertyFlagBits::eHostVisible|vk::MemoryPropertyFlagBits::eHostCoherent,
+			VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT|VMA_ALLOCATION_CREATE_MAPPED_BIT|VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+		context.GetDevice().SetDebugName(**buffersCpu[i].mBuffer, filename.stem().string() + "/hostbuffer" + std::to_string(i));
+
+		buffers[i] = Buffer::Create(
+			context.GetDevice(),
+			model.buffers[i].data.size(),
+			bufferUsage,
+			vk::MemoryPropertyFlagBits::eDeviceLocal,
+			VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT);
+		context.GetDevice().SetDebugName(**buffers[i].mBuffer, filename.stem().string() + "/buffer" + std::to_string(i));
+
+		std::memcpy(buffersCpu[i].data(), model.buffers[i].data.data(), model.buffers[i].data.size());
+		context.Copy(buffersCpu[i], buffers[i]);
+	};
 
 	auto GetImage = [&](const uint32_t textureIndex, const bool srgb) -> ImageView {
 		if (textureIndex >= model.textures.size()) return {};
@@ -74,7 +92,7 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 			.levelCount = 1,
 			.baseArrayLayer = 0,
 			.layerCount = 1 });
-		device.SetDebugName(**img.mImage, image.name);
+		device.SetDebugName(**img.mImage, filename.stem().string() + "/" + image.name);
 
 		context.Copy(context.UploadData(image.image), img);
 		context.GenerateMipMaps(img.mImage);
@@ -143,7 +161,8 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 			const size_t indexStride = tinygltf::GetComponentSizeInBytes(indicesAccessor.componentType);
 
 			Mesh mesh = {};
-			mesh.indexBuffer = buffers[indexBufferView.buffer].slice(indexBufferView.byteOffset + indicesAccessor.byteOffset, indicesAccessor.count * indexStride);
+			mesh.indexBufferCpu = buffersCpu[indexBufferView.buffer].slice(indexBufferView.byteOffset + indicesAccessor.byteOffset, indicesAccessor.count * indexStride);
+			mesh.indexBuffer    = buffers   [indexBufferView.buffer].slice(indexBufferView.byteOffset + indicesAccessor.byteOffset, indicesAccessor.count * indexStride);
 			mesh.indexSize = indexStride;
 			switch (prim.mode) {
 				case TINYGLTF_MODE_POINTS: 			mesh.topology = vk::PrimitiveTopology::ePointList; break;
@@ -247,18 +266,19 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 					mesh.aabb.maxZ = (float)accessor.maxValues[2];
 				}
 
-				auto& attribs = mesh.vertexAttributes[attributeType];
-				if (attribs.size() <= typeIndex) attribs.resize(typeIndex+1);
-				const tinygltf::BufferView& b = model.bufferViews[accessor.bufferView];
-				const uint32_t stride = accessor.ByteStride(b);
-				attribs[typeIndex] = {
-					buffers[b.buffer].slice(b.byteOffset + accessor.byteOffset, stride*accessor.count),
-					MeshVertexAttributeLayout{
-						.stride = stride,
-						.format = attributeFormat,
-						.offset = 0,
-						.inputRate = vk::VertexInputRate::eVertex} };
-
+				for (int i = 0; i < 2; i++) {
+					auto& attribs = i == 0 ? mesh.vertexAttributes[attributeType] : mesh.vertexAttributesCpu[attributeType];
+					if (attribs.size() <= typeIndex) attribs.resize(typeIndex+1);
+					const tinygltf::BufferView& b = model.bufferViews[accessor.bufferView];
+					const uint32_t stride = accessor.ByteStride(b);
+					attribs[typeIndex] = {
+						(i == 0 ? buffers[b.buffer] : buffersCpu[b.buffer]).slice(b.byteOffset + accessor.byteOffset, stride*accessor.count),
+						MeshVertexAttributeLayout{
+							.stride = stride,
+							.format = attributeFormat,
+							.offset = 0,
+							.inputRate = vk::VertexInputRate::eVertex} };
+				}
 			}
 
 			meshes[i][j] = make_ref<Mesh>(std::move(mesh));

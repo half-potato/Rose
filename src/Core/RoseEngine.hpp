@@ -18,6 +18,8 @@ namespace RoseEngine {
 template<typename T> using ref = std::shared_ptr<T>;
 template<typename T> using weak_ref = std::weak_ptr<T>;
 
+template<class... Ts> struct overloads : Ts... { using Ts::operator()...; };
+
 template<typename T, typename...Args>
 inline ref<T> make_ref(Args&&... args) { return std::make_shared<T>(std::forward<Args>(args)...); }
 

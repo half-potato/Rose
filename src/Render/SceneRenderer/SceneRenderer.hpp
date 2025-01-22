@@ -15,10 +15,10 @@ private:
 		ref<Pipeline> pipeline = {};
 		vk::Format    renderTargetFormat = {};
 	};
-	PairMap<CachedPipeline, MeshLayout, MaterialFlags> cachedPipelines = {};
+	TupleMap<CachedPipeline, MeshLayout, MaterialFlags, bool> cachedPipelines = {};
 	TransientResourceCache<AccelerationStructure> cachedAccelerationStructures = {};
 	ref<vk::raii::Sampler> cachedSampler = nullptr;
-	ref<const ShaderModule> vertexShader, fragmentShader, fragmentShaderCutoff;
+	ref<const ShaderModule> vertexShader, vertexShaderTextured, fragmentShader, fragmentShaderTextured, fragmentShaderTexturedAlphaCutoff;
 	ref<Pipeline> pathTracer = nullptr;
 
 	struct DrawBatch {
@@ -41,19 +41,23 @@ private:
 	inline const auto& GetPipeline(Device& device, vk::Format format, const Mesh& mesh, const Material<ImageView>& material) {
 		if (!vertexShader || (ImGui::IsKeyPressed(ImGuiKey_F5, false) && vertexShader->IsStale())) {
 			if (vertexShader) device.Wait();
-			vertexShader         = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "vertexMain");
-			fragmentShader       = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "fragmentMain");
-			fragmentShaderCutoff = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "fragmentMain", "sm_6_7", ShaderDefines{ { "USE_ALPHA_CUTOFF", "" } });
+			vertexShader                      = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "vertexMain");
+			vertexShaderTextured              = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "vertexMain", "sm_6_7", ShaderDefines{ { "HAS_TEXCOORD", "1" } });
+			fragmentShader                    = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "fragmentMain");
+			fragmentShaderTextured            = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "fragmentMain", "sm_6_7", ShaderDefines{ { "HAS_TEXCOORD", "1" } });
+			fragmentShaderTexturedAlphaCutoff = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "fragmentMain", "sm_6_7", ShaderDefines{ { "HAS_TEXCOORD", "1" }, { "USE_ALPHA_CUTOFF", "1" } });
 		}
 
-		auto fs = material.HasFlag(MaterialFlags::eAlphaCutoff) ? fragmentShaderCutoff : fragmentShader;
+		bool textured = mesh.vertexAttributes.contains(MeshVertexAttributeType::eTexcoord) && mesh.vertexAttributes.at(MeshVertexAttributeType::eTexcoord).size() > 0;
+		auto vs = textured ? vertexShaderTextured : vertexShader;
+		auto fs = textured ? (material.HasFlag(MaterialFlags::eAlphaCutoff) ? fragmentShaderTexturedAlphaCutoff : fragmentShaderTextured) : fragmentShader;
 		const bool alphaBlend = material.HasFlag(MaterialFlags::eAlphaBlend);
 
-		auto key = std::pair{ mesh.GetLayout(*vertexShader), (MaterialFlags)material.GetFlags() };
+		auto key = std::tuple{ mesh.GetLayout(*vs), (MaterialFlags)material.GetFlags(), textured };
 
 		if (auto it = cachedPipelines.find(key); it != cachedPipelines.end()) {
 			const auto& [pipeline, format_] = it->second;
-			if (pipeline->GetShader(vk::ShaderStageFlagBits::eVertex) != vertexShader || pipeline->GetShader(vk::ShaderStageFlagBits::eFragment) != fs || format_ != format)
+			if (pipeline->GetShader(vk::ShaderStageFlagBits::eVertex) != vs || pipeline->GetShader(vk::ShaderStageFlagBits::eFragment) != fs || format_ != format)
 				cachedPipelines.erase(it);
 			else
 				return *it;
@@ -72,10 +76,10 @@ private:
 
 		GraphicsPipelineInfo pipelineInfo {
 			.vertexInputState = VertexInputDescription{
-				.bindings   = key.first.bindings,
-				.attributes = key.first.attributes },
+				.bindings   = std::get<0>(key).bindings,
+				.attributes = std::get<0>(key).attributes },
 			.inputAssemblyState = vk::PipelineInputAssemblyStateCreateInfo{
-				.topology = key.first.topology },
+				.topology = std::get<0>(key).topology },
 			.rasterizationState = vk::PipelineRasterizationStateCreateInfo{
 				.depthClampEnable = false,
 				.rasterizerDiscardEnable = false,
@@ -111,7 +115,7 @@ private:
 				{ "scene.meshBuffers", vk::DescriptorBindingFlagBits::ePartiallyBound },
 				{ "scene.images",      vk::DescriptorBindingFlagBits::ePartiallyBound } },
 			.immutableSamplers      = { { "scene.sampler", { cachedSampler } } } };
-		auto pipeline = Pipeline::CreateGraphics(device, vertexShader, fs, pipelineInfo, layoutInfo);
+		auto pipeline = Pipeline::CreateGraphics(device, vs, fs, pipelineInfo, layoutInfo);
 		return *cachedPipelines.emplace(key, CachedPipeline{ .pipeline = pipeline, .renderTargetFormat = format }).first;
 	}
 
@@ -119,7 +123,7 @@ public:
 	inline void Initialize(CommandContext& context) {}
 	inline void InspectorWidget(CommandContext& context) {}
 
-	inline const ref<SceneNode>& GetScene() const { return scene; }
+	inline const ref<SceneNode>& GetSceneRoot() const { return scene; }
 	inline const ImageView& GetBackgroundImage() const { return backgroundImage; }
 	inline const float3& GetBackgroundColor() const { return backgroundColor; }
 
@@ -157,9 +161,9 @@ public:
 				todo.pop();
 
 				if (n->mesh && n->material) {
-					const auto& [meshLayout_Flags, cachedPipeline] = GetPipeline(context.GetDevice(), renderData.gbuffer.renderTarget.GetImage()->Info().format, *n->mesh, *n->material);
+					const auto& [key, cachedPipeline] = GetPipeline(context.GetDevice(), renderData.gbuffer.renderTarget.GetImage()->Info().format, *n->mesh, *n->material);
 					auto&[meshLayout_, meshes] = renderables[cachedPipeline.pipeline.get()];
-					meshLayout_ = meshLayout_Flags.first;
+					meshLayout_ = std::get<0>(key);
 					meshes[n->mesh.get()][n->material.get()].emplace_back(std::pair{n, t});
 				}
 

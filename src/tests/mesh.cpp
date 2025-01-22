@@ -73,6 +73,7 @@ public:
 	}
 	inline ~App() {
 		device->Wait();
+		(*device)->waitIdle();
 	}
 
 	inline bool CreateSwapchain() {
