@@ -32,7 +32,7 @@ inline size_t HashRange(const R& r) {
 }
 
 template<hashable Tx, hashable... Ty>
-inline size_t HashArgs(const Tx& x, const Ty&... y) {
+constexpr size_t HashArgs(const Tx& x, const Ty&... y) {
 	std::hash<Tx> hasher;
 	if constexpr (sizeof...(Ty) == 0)
 		return hasher(x);

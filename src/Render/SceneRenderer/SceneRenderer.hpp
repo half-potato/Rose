@@ -130,6 +130,8 @@ public:
 	inline const auto& GetInstanceNodes() const { return instanceNodes; }
 	inline const auto& GetAccelerationStructure() const { return accelerationStructure.accelerationStructure; }
 
+	inline const ShaderParameter& GetSceneParameters() const { return sceneParameters; }
+
 	inline void SetDirty() { updateScene = true; }
 
 	inline void SetScene(const ref<SceneNode>& s) { scene = s; SetDirty(); }
@@ -225,7 +227,8 @@ public:
 							instanceHeaders.emplace_back(InstanceHeader{
 								.transformIndex = (uint32_t)transforms.size(),
 								.materialIndex  = (uint32_t)materialId,
-								.meshIndex = (uint32_t)meshId });
+								.meshIndex = (uint32_t)meshId,
+								.triangleCount = uint32_t(mesh->indexBuffer.size_bytes()/mesh->indexSize)/3 });
 							transforms.emplace_back(t);
 							instanceNodes.emplace_back(n->shared_from_this());
 
@@ -322,8 +325,8 @@ public:
 		}
 		ShaderParameter params = {};
 		params["scene"] = sceneParameters;
-		params["renderTarget"] = ImageParameter{.image = renderData.gbuffer.renderTarget, .imageLayout = vk::ImageLayout::eGeneral };
-		params["visibility"]   = ImageParameter{.image = renderData.gbuffer.visibility  , .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		params["renderTarget"] = ImageParameter{ .image = renderData.gbuffer.renderTarget, .imageLayout = vk::ImageLayout::eGeneral };
+		params["visibility"]   = ImageParameter{ .image = renderData.gbuffer.visibility  , .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 		params["worldToCamera"] = renderData.worldToCamera;
 		params["cameraToWorld"] = renderData.cameraToWorld;
 		params["projection"]    = renderData.projection;

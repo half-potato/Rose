@@ -299,7 +299,7 @@ ref<ShaderModule> ShaderModule::Create(
 	if (!std::filesystem::exists(sourceFile))
 		throw std::runtime_error(sourceFile.string() + " does not exist");
 
-	slang::IGlobalSession* session;
+	static thread_local slang::IGlobalSession* session;
 	slang::createGlobalSession(&session);
 
 	slang::ICompileRequest* request;
@@ -340,14 +340,12 @@ ref<ShaderModule> ShaderModule::Create(
 		const char* msg = request->getDiagnosticOutput();
 		if (msg) std::cout << msg;
 		if (SLANG_FAILED(r)) {
-			if (!allowRetry)
-				throw std::runtime_error(msg);
-
-			pfd::message n("Shader compilation failed", "Retry?", pfd::choice::yes_no);
-			if (n.result() == pfd::button::yes) {
-				continue;
-			} else
-				throw std::runtime_error(msg);
+			if (allowRetry) {
+				pfd::message n("Shader compilation failed", "Retry?", pfd::choice::yes_no);
+				if (n.result() == pfd::button::yes)
+					continue;
+			}
+			throw std::runtime_error(msg);
 		}
 		break;
 	} while (true);
@@ -430,7 +428,6 @@ ref<ShaderModule> ShaderModule::Create(
 	}
 
 	request->Release();
-	session->Release();
 
 	return shader;
 }

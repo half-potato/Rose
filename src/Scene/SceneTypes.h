@@ -1,19 +1,11 @@
 #pragma once
 
+#include <Core/RoseEngine.h>
+#include <Core/DxgiFormatConvert.h>
+
 #ifdef __cplusplus
 #include <Core/Gui.hpp>
-#include <Core/DxgiFormatConvert.h>
-#define SLANG_MUTATING
-#define CPP_CONST const
 #endif
-
-#ifdef __SLANG_COMPILER__
-import Core.DxgiFormatConvert;
-#define SLANG_MUTATING [mutating]
-#define CPP_CONST
-#endif
-
-#include "Core/Bitfield.h"
 
 namespace RoseEngine {
 
@@ -48,7 +40,7 @@ struct InstanceHeader {
     uint transformIndex;
 	uint materialIndex;
 	uint meshIndex;
-	uint pad;
+	uint triangleCount;
 };
 
 enum MaterialFlags {
@@ -122,7 +114,6 @@ struct Material {
 };
 
 #ifdef __cplusplus
-
 inline bool InspectorGui(Material<ImageView>& material) {
 	bool changed = false;
 

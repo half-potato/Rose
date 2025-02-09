@@ -59,7 +59,8 @@ ConcurrentBinaryTree::~ConcurrentBinaryTree() {
 }
 
 void ConcurrentBinaryTree::Build(CommandContext& context) {
-	ShaderParameter params = GetShaderParameter();
+	ShaderParameter params = {};
+	params["cbt"] = GetShaderParameter();
 
 	auto descriptorSets = context.GetDescriptorSets(*cbtReducePipeline->Layout());
 	context.UpdateDescriptorSets(*descriptorSets, params, *cbtReducePipeline->Layout());

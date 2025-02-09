@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Core/SlangInterop.h>
-#include <Core/Bitfield.h>
+#include <Core/RoseEngine.h>
 
 namespace RoseEngine {
 

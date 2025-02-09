@@ -3,6 +3,7 @@
 #include "Image.hpp"
 
 #include <imgui/imgui.h>
+#include <imgui/imgui_stdlib.h>
 
 namespace RoseEngine {
 
@@ -30,10 +31,8 @@ public:
 	template<typename T>
 	inline static bool ScalarField(const std::string& label, T* ptr, const T& mn = 0, const T& mx = 0, const float dragSpeed = 1) {
 		if (dragSpeed == 0 && mn != mx) {
-			ImGui::SetNextItemWidth(75);
 			return ImGui::SliderScalar(label.c_str(), GetImGuiDataType<T>(), ptr, &mn, &mx);
 		} else {
-			ImGui::SetNextItemWidth(50);
 			return ImGui::DragScalar(label.c_str(), GetImGuiDataType<T>(), ptr, dragSpeed, &mn, &mx);
 		}
 	}
@@ -81,7 +80,6 @@ public:
 			{ vk::Format::eR64G64B64A64Sfloat, { ImGuiDataType_Double, 4 } }
 		};
 		const auto&[dataType, components] = sFormatMap.at(format);
-		ImGui::SetNextItemWidth(50);
 		return ImGui::InputScalarN(label.c_str(), dataType, data, components);
 
 	}
@@ -96,6 +94,27 @@ public:
 					selected = (T)i;
 					ret = true;
 				}
+			}
+			ImGui::EndCombo();
+		}
+		return ret;
+	}
+
+	template<typename FlagBits>
+	inline static bool vkFlagDropdown(const std::string& label, vk::Flags<FlagBits>& flags) {
+		bool ret = false;
+
+		std::string preview = vk::to_string(flags);
+		if (ImGui::BeginCombo(label.c_str(), preview.c_str())) {
+			uint32_t allFlags = (uint32_t)vk::FlagTraits<FlagBits>::allFlags;
+			while (allFlags != 0) {
+				uint32_t i = std::countr_zero(allFlags);
+				vk::Flags<FlagBits> flag = (vk::Flags<FlagBits>)(1 << i);
+				if (ImGui::Selectable(vk::to_string(flag).c_str(), (uint32_t)(flags&flag) != 0, ImGuiSelectableFlags_DontClosePopups)) {
+					flags ^= flag;
+					ret = true;
+				}
+				allFlags &= ~(uint32_t)flag;
 			}
 			ImGui::EndCombo();
 		}

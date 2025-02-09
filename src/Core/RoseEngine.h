@@ -1,6 +1,11 @@
 #pragma once
 
+#include "Bitfield.h"
+
 #ifdef __cplusplus
+
+#include <cmath>
+#include "MathTypes.hpp"
 
 #define SLANG_MUTATING
 #define SLANG_GENERIC(T, Name)
@@ -10,7 +15,9 @@
 #define INOUT_ARG(T, name) T& name
 #define OUT_ARG(T, name) T& name
 
-#else
+#endif
+
+#ifdef __SLANG_COMPILER__
 
 #define SLANG_MUTATING [mutating]
 #define SLANG_GENERIC(T, Name) <let Name : T>
@@ -20,9 +27,4 @@
 #define INOUT_ARG(T, name) inout T name
 #define OUT_ARG(T, name) out T name
 
-#define M_PI 3.14159265358979323846
-#define M_1_PI 0.318309886183790671538
-
 #endif
-
-#include "Math.h"

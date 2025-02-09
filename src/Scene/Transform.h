@@ -1,12 +1,6 @@
 #pragma once
 
-#ifdef __cplusplus
-#include <Core/MathTypes.hpp>
-#define CPP_CONST const
-#else
-import Core.Math;
-#define CPP_CONST
-#endif
+#include <Core/RoseEngine.h>
 
 namespace RoseEngine {
 
@@ -50,8 +44,11 @@ struct Transform {
 	}
 	#endif
 
+	inline float4 ProjectPointUnnormalized(const float4 v) CPP_CONST {
+		return mul(transform, v);
+	}
 	inline float4 ProjectPointUnnormalized(const float3 v, const float w = 1.f) CPP_CONST {
-		return mul(transform, float4(v, w));
+		return ProjectPointUnnormalized(float4(v, w));
 	}
 	inline float3 ProjectPoint(const float3 v) CPP_CONST {
 		float4 h = ProjectPointUnnormalized(v);

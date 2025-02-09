@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(RoseEngine)
 
+set(ROSE_ENABLE_TESTING ON CACHE BOOL ON)
+
 # Find dependencies
 
 find_package(Vulkan REQUIRED)
@@ -21,14 +23,16 @@ include_directories(src)
 link_libraries(Vulkan::Vulkan)
 link_libraries(glm)
 
-file(GLOB_RECURSE CORE_SRCS   "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
-file(GLOB_RECURSE RENDER_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/Render/**.cpp")
-file(GLOB_RECURSE SCENE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Scene/**.cpp")
-file(GLOB         IMGUI_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
+file(GLOB_RECURSE CORE_SRCS      "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
+file(GLOB_RECURSE RENDER_SRCS    "${CMAKE_CURRENT_SOURCE_DIR}/src/Render/**.cpp")
+file(GLOB_RECURSE SCENE_SRCS     "${CMAKE_CURRENT_SOURCE_DIR}/src/Scene/**.cpp")
+file(GLOB_RECURSE WORKGRAPH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/WorkGraph/**.cpp")
+file(GLOB         IMGUI_SRCS     "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
 add_library(RoseLib
 	${CORE_SRCS}
 	${RENDER_SRCS}
 	${SCENE_SRCS}
+	${WORKGRAPH_SRCS}
 	${IMGUI_SRCS}
 	thirdparty/ImGuizmo.cpp
 	thirdparty/imnodes.cpp
@@ -73,19 +77,10 @@ target_link_libraries(SceneApp PRIVATE RoseLib)
 add_executable(TerrainApp src/TerrainApp.cpp)
 target_link_libraries(TerrainApp PRIVATE RoseLib)
 
-enable_testing()
+add_executable(WorkGraphApp src/WorkGraphApp.cpp)
+target_link_libraries(WorkGraphApp PRIVATE RoseLib)
 
-add_executable(test_program src/tests/program.cpp)
-target_link_libraries(test_program RoseLib)
-add_test(program bin/test_program)
-set_tests_properties(program PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")
-
-add_executable(test_program_graph src/tests/program_graph.cpp)
-target_link_libraries(test_program_graph RoseLib)
-add_test(program_graph bin/test_program_graph)
-set_tests_properties(program PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")
-
-add_executable(test_mesh src/tests/mesh.cpp)
-target_link_libraries(test_mesh RoseLib)
-add_test(mesh bin/test_mesh)
-set_tests_properties(mesh PROPERTIES PASS_REGULAR_EXPRESSION "SUCCESS")
+if (ROSE_ENABLE_TESTING)
+	enable_testing()
+	add_subdirectory(src/Tests)
+endif()

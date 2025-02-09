@@ -1,8 +1,6 @@
 #pragma once
 
-#ifdef __cplusplus
-#include "MathTypes.hpp"
-#endif
+#include "RoseEngine.h"
 
 namespace RoseEngine {
 
@@ -46,13 +44,7 @@ inline float3 viridis(const float x) {
 }
 
 // https://graphics.pixar.com/library/OrthonormalB/paper.pdf
-inline void ONB(const float3 n,
-#ifdef __cplusplus
-	float3& b1, float3& b2
-#else
-	out float3 b1, out float3 b2
-#endif
-) {
+inline void ONB(const float3 n, OUT_ARG(float3, b1), OUT_ARG(float3, b2)) {
     float sign = n.z < 0 ? -1 : 1;
     const float a = -1.0f / (sign + n.z);
     const float b = n.x * n.y * a;

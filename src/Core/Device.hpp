@@ -94,6 +94,7 @@ public:
 
 	inline void Wait() {
 		Wait(mCurrentTimelineValue - 1);
+		mDevice.waitIdle();
 	}
 
 	template<typename T> requires(std::convertible_to<decltype(T::objectType), vk::ObjectType>)

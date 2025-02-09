@@ -1,5 +1,5 @@
 #include <iostream>
-#include <Core/Math.h>
+#include <Core/MathUtils.h>
 
 #define TINYGLTF_USE_CPP14
 #define TINYGLTF_NO_STB_IMAGE_WRITE

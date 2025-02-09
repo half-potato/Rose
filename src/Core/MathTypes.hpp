@@ -1,6 +1,8 @@
 #pragma once
 
 #include <bit>
+#include <string>
+#include <iostream>
 
 #include <glm/glm.hpp>
 #include <glm/gtx/compatibility.hpp>
@@ -156,6 +158,32 @@ inline float f16tof32(uint h) {
 
     o.u |= (h & 0x8000) << 16;    // sign bit
     return o.f;
+}
+
+template<typename T, int N, glm::qualifier Q>
+inline std::ostream& operator<<(std::ostream& s, glm::vec<N,T,Q> v) {
+	s << "<";
+	for (int i = 0; i < N; i++) {
+		if (i > 0) s << ", ";
+		s << v[i];
+	}
+	s << ">";
+	return s;
+}
+
+}
+
+namespace std {
+
+template<typename T, int N, glm::qualifier Q>
+inline std::string to_string(glm::vec<N,T,Q> v) {
+	std::string s;
+	s.reserve(2 + 5*N);
+	for (int i = 0; i < N; i++) {
+		if (i > 0) s += ", ";
+		s += v[i];
+	}
+	return "<" + s + ">";
 }
 
 }

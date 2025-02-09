@@ -1,6 +1,6 @@
 #include "TerrainRenderer.hpp"
 #include <Core/Gui.hpp>
-#include <Core/Math.h>
+#include <Core/MathUtils.h>
 #include <portable-file-dialogs.h>
 #include <iostream>
 

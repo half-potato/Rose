@@ -10,14 +10,10 @@ int main(int argc, const char** argv) {
 
 	WindowedApp app({
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-		VK_KHR_RAY_QUERY_EXTENSION_NAME,
 		VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
 		VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME });
 
-	auto terrain       = make_ref<TerrainRenderer>();
+	auto terrain = make_ref<TerrainRenderer>();
 
 	ViewportWidget viewport(*app.contexts[0], terrain);
 

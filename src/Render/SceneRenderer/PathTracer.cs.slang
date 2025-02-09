@@ -1,5 +1,5 @@
 import Scene.Scene;
-import Core.Math;
+import Core.MathUtils;
 import Core.Random;
 
 using namespace RoseEngine;

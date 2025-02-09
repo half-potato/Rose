@@ -6,18 +6,18 @@ cbuffer PushConstants {
 
 uniform float scale2;
 uniform float offset2;
+uniform uint  dataSize;
 
 RWStructuredBuffer<float> data;
 
 [numthreads(32,1,1)]
 [shader("compute")]
-void main(uint3 index: SV_DispatchThreadID) {
+void testMain(uint3 index: SV_DispatchThreadID) {
+    if (index.x >= dataSize) return;
     float v = data[index.x];
     v = v * scale  + offset;
     v = v * scale2 + offset2;
     data[index.x] = v;
-
-
     if (index.x == 0) {
 		printf("scale = %0.2f\n", scale);
         printf("offset = %0.2f\n", offset);

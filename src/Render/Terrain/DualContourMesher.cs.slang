@@ -5,6 +5,7 @@
 import Render.Terrain.Terrain;
 import Scene.Transform;
 import Core.Indirect;
+import Render.cbt.cbt;
 #include "SubdivisionNode.h"
 
 using namespace RoseEngine;

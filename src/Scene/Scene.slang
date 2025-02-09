@@ -1,9 +1,9 @@
 #pragma once
 
-__exported import Transform;
-import Core.Math;
-
+import Core.MathUtils;
 #include "SceneTypes.h"
+
+__exported import Transform;
 
 namespace RoseEngine {
 

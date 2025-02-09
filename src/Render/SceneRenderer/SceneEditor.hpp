@@ -15,6 +15,8 @@ private:
 	weak_ref<SceneNode> selected = {};
 
 	ref<Pipeline> outlinePipeline = {};
+	ref<Pipeline> buildVbvhPipeline = {};
+	ref<Pipeline> drawVbvhPipeline = {};
 
 	uint32_t operation = ImGuizmo::TRANSLATE | ImGuizmo::ROTATE;
 	bool opLocal = false;
@@ -215,17 +217,46 @@ public:
 				}
 			}
 			if (idx != -1) {
-				if (!outlinePipeline || ImGui::IsKeyDown(ImGuiKey_F5)) {
-					if (outlinePipeline) context.GetDevice().Wait();
-					outlinePipeline = Pipeline::CreateCompute(context.GetDevice(), ShaderModule::Create(context.GetDevice(), FindShaderPath("Outline.cs.slang")));
+				// outline selected object
+				{
+					if (!outlinePipeline || (ImGui::IsKeyDown(ImGuiKey_F5) && outlinePipeline->GetShader()->IsStale())) {
+						if (outlinePipeline) context.GetDevice().Wait();
+						outlinePipeline = Pipeline::CreateCompute(context.GetDevice(), ShaderModule::Create(context.GetDevice(), FindShaderPath("Outline.cs.slang")));
+					}
+
+					ShaderParameter params = {};
+					params["color"]      = ImageParameter{renderData.gbuffer.renderTarget, vk::ImageLayout::eGeneral};
+					params["visibility"] = ImageParameter{renderData.gbuffer.visibility, vk::ImageLayout::eShaderReadOnlyOptimal};
+					params["highlightColor"] = float3(1, 0.9f, 0.2f);
+					params["selected"] = idx;
+					context.Dispatch(*outlinePipeline, renderData.gbuffer.renderTarget.Extent(), params);
 				}
 
-				ShaderParameter params = {};
-				params["color"]      = ImageParameter{renderData.gbuffer.renderTarget, vk::ImageLayout::eGeneral};
-				params["visibility"] = ImageParameter{renderData.gbuffer.visibility, vk::ImageLayout::eShaderReadOnlyOptimal};
-				params["highlightColor"] = float3(1, 0.9f, 0.2f);
-				params["selected"] = idx;
-				context.Dispatch(*outlinePipeline, renderData.gbuffer.renderTarget.Extent(), params);
+				{
+					ShaderParameter params = {};
+					params["scene"]      = scene->GetSceneParameters();
+					params["color"]      = ImageParameter{renderData.gbuffer.renderTarget, vk::ImageLayout::eGeneral};
+					params["selected"] = idx;
+					params["imageSize"] = uint2(renderData.gbuffer.renderTarget.Extent());
+					params["worldToCamera"] = renderData.worldToCamera;
+					params["projection"]    = renderData.projection;
+
+					// build vbvh
+
+					if (!buildVbvhPipeline || (ImGui::IsKeyDown(ImGuiKey_F5) && buildVbvhPipeline->GetShader()->IsStale())) {
+						if (buildVbvhPipeline) context.GetDevice().Wait();
+						buildVbvhPipeline = Pipeline::CreateCompute(context.GetDevice(), ShaderModule::Create(context.GetDevice(), FindShaderPath("vbvh.cs.slang"), "build"));
+					}
+					context.Dispatch(*buildVbvhPipeline, 1u, params);
+
+					// draw vbvh
+
+					if (!drawVbvhPipeline || (ImGui::IsKeyDown(ImGuiKey_F5) && drawVbvhPipeline->GetShader()->IsStale())) {
+						if (drawVbvhPipeline) context.GetDevice().Wait();
+						drawVbvhPipeline = Pipeline::CreateCompute(context.GetDevice(), ShaderModule::Create(context.GetDevice(), FindShaderPath("vbvh.cs.slang"), "render"));
+					}
+					context.Dispatch(*drawVbvhPipeline, renderData.gbuffer.renderTarget.Extent(), params);
+				}
 			}
 		}
 

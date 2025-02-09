@@ -87,11 +87,11 @@ public:
 			fragmentShader = pipeline->GetShader(vk::ShaderStageFlagBits::eFragment);
 		}
 		if (!vertexShader || vertexShader->IsStale()) {
-			vertexShader   = ShaderModule::Create(*device, FindShaderPath("Test.3d.slang"), "vertexMain");
+			vertexShader   = ShaderModule::Create(*device, FindShaderPath("Mesh.3d.slang"), "vertexMain");
 			meshLayout = mesh.GetLayout(*vertexShader);
 		}
 		if (!fragmentShader || fragmentShader->IsStale())
-			fragmentShader = ShaderModule::Create(*device, FindShaderPath("Test.3d.slang"), "fragmentMain");
+			fragmentShader = ShaderModule::Create(*device, FindShaderPath("Mesh.3d.slang"), "fragmentMain");
 
 		// get vertex buffer bindings from the mesh layout
 
