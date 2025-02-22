@@ -1,5 +1,7 @@
 #pragma once
 
+static const uint UINT32_MAX = 0xFFFFFFFF;
+
 static const float FLT_MAX             = 3.402823466e+38F;         // max value
 static const float FLT_MIN             = 1.175494351e-38F;         // min normalized positive value
 static const float M_E                 = 2.71828182845904523536;   // e

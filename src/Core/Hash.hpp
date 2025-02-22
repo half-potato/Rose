@@ -1,13 +1,29 @@
 #pragma once
 
+#include <variant>
+#include <ranges>
 #include <vulkan/vulkan_hash.hpp>
 
 namespace RoseEngine {
 
 template<typename T> concept hashable = requires(T v) { { std::hash<T>()(v) } -> std::convertible_to<size_t>; };
 
-constexpr size_t HashCombine(const size_t x, const size_t y) {
-	return x ^ (y + 0x9e3779b9 + (x << 6) + (x >> 2));
+template<hashable T>
+constexpr void HashCombine(size_t& seed, T value) {
+	seed ^= (std::hash<T>{}( value ) + 0x9e3779b9 + ( seed << 6 ) + ( seed >> 2 ));
+}
+
+template<hashable Tx, hashable... Ty>
+constexpr size_t HashArgs(const Tx& x, const Ty&... y) {
+	std::hash<Tx> hasher;
+	if constexpr (sizeof...(Ty) == 0)
+		return hasher(x);
+	else {
+		size_t seed = 0;
+		HashCombine(seed, hasher(x));
+		HashCombine(seed, HashArgs<Ty...>(y...));
+		return seed;
+	}
 }
 
 // accepts string literals
@@ -19,27 +35,24 @@ constexpr size_t HashArray(const T(& arr)[N]) {
 	else if constexpr (N == 1)
 		return hasher(arr[0]);
 	else
-		return HashCombine(HashArray<T,N-1>(arr), hasher(arr[N-1]));
+		return HashArgs(HashArray<T,N-1>(arr), hasher(arr[N-1]));
 }
 
 template<std::ranges::range R> requires(hashable<std::ranges::range_value_t<R>>)
 inline size_t HashRange(const R& r) {
 	std::hash<std::ranges::range_value_t<R>> hasher;
-	size_t h = 0;
-	for (auto it = std::ranges::begin(r); it != std::ranges::end(r); ++it)
-		h = HashCombine(h, hasher(*it));
-	return h;
+	size_t seed = 0;
+	for (const auto& elem : r) {
+		HashCombine(seed, elem);
+	}
+	return seed;
 }
 
-template<hashable Tx, hashable... Ty>
-constexpr size_t HashArgs(const Tx& x, const Ty&... y) {
-	std::hash<Tx> hasher;
-	if constexpr (sizeof...(Ty) == 0)
-		return hasher(x);
-	else
-		return HashCombine(hasher(x), HashArgs<Ty...>(y...));
+template<hashable... Ts>
+constexpr size_t HashVariant(const std::variant<Ts...>& v) {
+	size_t h = std::visit([]<typename T>(const T& x){ return std::hash<T>{}(x); }, v);
+	return HashArgs(v.index(), h);
 }
-
 
 template<hashable T0, hashable T1>
 struct PairHash {
@@ -68,7 +81,6 @@ struct RangeHash {
 		return HashRange<R>(r);
 	}
 };
-
 
 template<typename Ty, hashable T0, hashable T1>
 using PairMap = std::unordered_map<std::pair<T0, T1>, Ty, PairHash<T0, T1>>;

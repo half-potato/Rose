@@ -17,10 +17,12 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	features.largePoints = true;
 	features.sampleRateShading = true;
 	features.shaderInt16 = true;
+	features.shaderFloat64 = true;
 	features.geometryShader = true;
 	features.shaderStorageBufferArrayDynamicIndexing = true;
 	features.shaderSampledImageArrayDynamicIndexing = true;
 	features.shaderStorageImageArrayDynamicIndexing = true;
+	features.fragmentStoresAndAtomics = true;
 
 	const bool accelerationStructure = device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 

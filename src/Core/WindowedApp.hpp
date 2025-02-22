@@ -34,7 +34,7 @@ struct WindowedApp {
 	double fps = 0;
 	std::chrono::high_resolution_clock::time_point lastFrame = {};
 
-	inline WindowedApp(const vk::ArrayProxy<const std::string> &deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }) {
+	inline WindowedApp(const std::string& windowTitle, const vk::ArrayProxy<const std::string> &deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }) {
 		std::vector<std::string> instanceExtensions;
 		for (const auto& e : Window::RequiredInstanceExtensions())
 			instanceExtensions.emplace_back(e);
@@ -48,7 +48,7 @@ struct WindowedApp {
 		std::tie(physicalDevice, presentQueueFamily) = Window::FindSupportedDevice(**instance);
 		device = Device::Create(*instance, physicalDevice, deviceExtensions);
 
-		window    = Window::Create(*instance, "Rose", uint2(1920, 1080));
+		window    = Window::Create(*instance, windowTitle.c_str(), uint2(1920, 1080));
 		swapchain = Swapchain::Create(device, *window->GetSurface());
 
 		contexts.emplace_back(CommandContext::Create(device, presentQueueFamily));

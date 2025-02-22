@@ -108,3 +108,19 @@ public:
 };
 
 }
+
+namespace std {
+
+template<>
+struct hash<RoseEngine::ShaderDefines> {
+	inline size_t operator()(const RoseEngine::ShaderDefines& defines) const {
+		size_t seed = 0;
+		for (const auto&[def, val] : defines) {
+			RoseEngine::HashCombine(seed, def);
+			RoseEngine::HashCombine(seed, val);
+		}
+		return seed;
+	}
+};
+
+}

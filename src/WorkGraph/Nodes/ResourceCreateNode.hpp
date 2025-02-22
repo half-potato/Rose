@@ -45,17 +45,17 @@ struct ResourceCreateNode {
 };
 template<> constexpr static const char* kSerializedTypeName<ResourceCreateNode> = "ResourceCreateNode";
 
-template<>
-inline void Serialize(json& data, const ResourceCreateNode& node) {
+inline json& operator<<(json& data, const ResourceCreateNode& node) {
 	data["bufferSize"]  = node.resourceCreateInfo.buffer.size;
 	data["bufferUsage"] = (uint32_t)node.resourceCreateInfo.buffer.usage;
 	data["memoryFlags"] = (uint32_t)node.resourceCreateInfo.buffer.memoryFlags;
+	return data;
 }
-template<>
-inline void Deserialize(const json& data, ResourceCreateNode& node) {
+inline const json& operator>>(const json& data, ResourceCreateNode& node) {
 	node.resourceCreateInfo.buffer.size = data["bufferSize"];
 	node.resourceCreateInfo.buffer.usage       = (vk::BufferUsageFlags)data["bufferUsage"].get<uint32_t>();
 	node.resourceCreateInfo.buffer.memoryFlags = (vk::MemoryPropertyFlags)data["memoryFlags"].get<uint32_t>();
+	return data;
 }
 
 inline auto GetAttributes(const ResourceCreateNode& node) {
@@ -71,7 +71,7 @@ inline auto GetAttributes(const ResourceCreateNode& node) {
 	return attribs;
 }
 
-inline void DrawNode(ResourceCreateNode& node) {
+inline void DrawNode(CommandContext& context, ResourceCreateNode& node) {
 	DrawNodeTitle("Create Resource");
 	if (node.outputCount > 1) {
 		for (uint32_t i = 0; i < node.outputCount; i++) {

@@ -163,7 +163,6 @@ public:
 				.queueFamily = context.QueueFamily() });
 			context.ExecuteBarriers();
 
-			context.PushDebugLabel("ViewportWidget::Render");
 			vk::RenderingAttachmentInfo attachments[2] = {
 				vk::RenderingAttachmentInfo {
 					.imageView = *renderData.gbuffer.renderTarget,
@@ -209,7 +208,6 @@ public:
 				std::visit([&](const auto& r) { r->Render(context, renderData); }, rv);
 
 			context->endRendering();
-			context.PopDebugLabel(); // ViewportWidget::Render
 		}
 
 		{ // post render

@@ -67,7 +67,7 @@ public:
 			int nodeId = GetImNodeId(id);
 			ImNodes::BeginNode(nodeId);
 			std::visit([&](auto& v) {
-				DrawNode(v);
+				DrawNode(context, v);
 				for (const WorkNodeAttribute& attribute : GetAttributes(v)) {
 					attributeIdMap[GetImNodeId(id, attribute.name)] = {
 						WorkAttributePointer{id, attribute.name},
@@ -150,7 +150,7 @@ public:
 };
 
 int main(int argc, const char** argv) {
-	WindowedApp app({ VK_KHR_SWAPCHAIN_EXTENSION_NAME });
+	WindowedApp app("Work graph test", { VK_KHR_SWAPCHAIN_EXTENSION_NAME });
 
 	NodeWidget nodeEditor(*app.contexts[0]);
 

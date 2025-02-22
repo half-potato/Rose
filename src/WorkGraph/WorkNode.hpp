@@ -204,19 +204,17 @@ public:
 template<class T>
 concept is_work_graph = requires { typename T::WorkResourceMap; };
 
-
-template<typename T> inline void Serialize(json& data, const T& value) { data = value; }
-template<typename T> inline void Deserialize(const json& data, T& value) { data.get_to(value); }
-template<typename T> constexpr static const char* kSerializedTypeName = typeid(T).name();
+template<typename T>
+constexpr static const char* kSerializedTypeName = typeid(T).name();
 
 template<is_work_graph WorkGraphType>
-inline void Serialize(json& data, WorkGraphType& graph) {
+inline json& operator<<(json& data, WorkGraphType& graph) {
 	json& serializedNodes = data["nodes"];
 	json& serializedEdges = data["edges"];
 
 	for (const auto&[id, node] : graph.nodes) {
 		json& n = serializedNodes.emplace_back();
-		std::visit(Serialize, node, n);
+		std::visit(operator<<, node, n);
 		n["id"] = id;
 		n["type"] = std::visit(kSerializedTypeName, node);
 	}
@@ -228,6 +226,7 @@ inline void Serialize(json& data, WorkGraphType& graph) {
 		edge["dstNode"]      = dst.node;
 		edge["dstAttribute"] = dst.attribute;
 	}
+	return data;
 }
 
 template<typename VariantType, int Index = 0>
@@ -235,7 +234,7 @@ inline void DeserializeWorkNode(const json& data, VariantType& node) {
 	using T = std::variant_alternative_t<VariantType, Index>;
 	if (data["type"] == kSerializedTypeName<T>) {
 		T tmp;
-		Deserialize(data, tmp);
+		data >> tmp;
 		node = tmp;
 	} else {
 		if constexpr (Index+1 < std::variant_size_v<VariantType>) {
@@ -245,7 +244,7 @@ inline void DeserializeWorkNode(const json& data, VariantType& node) {
 }
 
 template<is_work_graph WorkGraphType>
-inline void Deserialize(const json& data, WorkGraphType& graph) {
+inline const json& operator>>(const json& data, WorkGraphType& graph) {
 	for (const json& n : data["nodes"]) {
 		const WorkNodeId id = n["id"].get<size_t>();
 		auto& node = graph.nodes[id];
@@ -261,6 +260,7 @@ inline void Deserialize(const json& data, WorkGraphType& graph) {
 		c["srcNode"]     .get_to(src.node);
 		c["srcAttribute"].get_to(src.attribute);
 	}
+	return data;
 }
 
 }

@@ -42,11 +42,15 @@ public:
 struct ComputePipelineInfo {
 	vk::PipelineCreateFlags            flags = {};
 	vk::PipelineShaderStageCreateFlags stageFlags = {};
+
+	inline bool operator==(const ComputePipelineInfo& rhs) const = default;
 };
 
 struct VertexInputDescription {
 	std::vector<vk::VertexInputBindingDescription>   bindings;
 	std::vector<vk::VertexInputAttributeDescription> attributes;
+
+	inline bool operator==(const VertexInputDescription& rhs) const = default;
 };
 struct ColorBlendState {
 	vk::PipelineColorBlendStateCreateFlags             flags = {};
@@ -54,12 +58,16 @@ struct ColorBlendState {
 	vk::LogicOp                                        logicOp = vk::LogicOp::eClear;
 	std::vector<vk::PipelineColorBlendAttachmentState> attachments;
 	std::array<float,4>                                blendConstants = { 1, 1, 1, 1 };
+
+	inline bool operator==(const ColorBlendState& rhs) const = default;
 };
 struct DynamicRenderingState {
 	uint32_t                viewMask = 0;
 	std::vector<vk::Format> colorFormats = {};
 	vk::Format              depthFormat = vk::Format::eUndefined;
 	vk::Format              stencilFormat = vk::Format::eUndefined;
+
+	inline bool operator==(const DynamicRenderingState& rhs) const = default;
 };
 struct GraphicsPipelineInfo {
 	vk::PipelineCreateFlags                                 flags      = {};
@@ -77,6 +85,8 @@ struct GraphicsPipelineInfo {
 	std::optional<DynamicRenderingState>                    dynamicRenderingState = {};
 	vk::RenderPass                                          renderPass = {};
 	uint32_t                                                subpassIndex = 0;
+
+	inline bool operator==(const GraphicsPipelineInfo& rhs) const = default;
 };
 
 class Pipeline {
@@ -96,6 +106,7 @@ public:
 	inline const vk::raii::Pipeline* operator->() const { return &mPipeline; }
 
 	inline const ref<const PipelineLayout>& Layout() const { return mLayout; }
+	inline const auto& Shaders() const { return mShaders; }
 	inline const ref<const ShaderModule>& GetShader() const { return *mShaders.begin(); }
 	inline const ref<const ShaderModule>& GetShader(const vk::ShaderStageFlagBits stage) const {
 		return *std::ranges::find(mShaders, stage, &ShaderModule::Stage);
@@ -107,5 +118,75 @@ void PrintBinding(const ShaderParameterBinding& binding, uint32_t depth = 0);
 inline uint3 GetDispatchDim(const uint3 workgroupSize, const uint3 extent) {
 	return (extent + workgroupSize - uint3(1)) / workgroupSize;
 }
+
+}
+
+namespace std {
+
+template<>
+struct hash<RoseEngine::ComputePipelineInfo> {
+	inline size_t operator()(const RoseEngine::ComputePipelineInfo& v) const {
+		size_t seed = 0;
+		RoseEngine::HashCombine(seed, v.flags);
+		RoseEngine::HashCombine(seed, v.stageFlags);
+		return seed;
+	}
+};
+
+template<>
+struct hash<RoseEngine::VertexInputDescription> {
+	inline size_t operator()(const RoseEngine::VertexInputDescription& v) const {
+		return RoseEngine::HashArgs(
+			RoseEngine::HashRange(v.bindings),
+			RoseEngine::HashRange(v.attributes)
+		);
+	}
+};
+template<>
+struct hash<RoseEngine::ColorBlendState> {
+	inline size_t operator()(const RoseEngine::ColorBlendState& v) const {
+		return RoseEngine::HashArgs(
+			v.flags,
+			v.logicOpEnable,
+			v.logicOp,
+			RoseEngine::HashRange(v.attachments),
+			RoseEngine::HashRange(v.blendConstants)
+		);
+	}
+};
+template<>
+struct hash<RoseEngine::DynamicRenderingState> {
+	inline size_t operator()(const RoseEngine::DynamicRenderingState& v) const {
+		return RoseEngine::HashArgs(
+			v.viewMask,
+			RoseEngine::HashRange(v.colorFormats),
+			v.depthFormat,
+			v.stencilFormat
+		);
+	}
+};
+template<>
+struct hash<RoseEngine::GraphicsPipelineInfo> {
+	inline size_t operator()(const RoseEngine::GraphicsPipelineInfo& v) const {
+		return RoseEngine::HashArgs(
+			v.flags,
+			v.stageFlags,
+			v.vertexInputState,
+			v.inputAssemblyState,
+			v.tessellationState,
+			v.rasterizationState,
+			v.multisampleState,
+			v.depthStencilState,
+			RoseEngine::HashRange(v.viewports),
+			RoseEngine::HashRange(v.scissors),
+			v.colorBlendState,
+			RoseEngine::HashRange(v.dynamicStates),
+			v.dynamicRenderingState,
+			v.renderPass,
+			v.subpassIndex
+		);
+	}
+};
+
 
 }

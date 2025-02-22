@@ -2,6 +2,12 @@
 
 #include <WorkGraph/WorkNode.hpp>
 #include <Core/TransientResourceCache.hpp>
+#include <portable-file-dialogs.h>
+
+namespace
+{
+	inline static const std::filesystem::path kSrcFolder = std::filesystem::path(std::source_location::current().file_name()).parent_path().parent_path().parent_path();
+}
 
 namespace RoseEngine {
 
@@ -16,7 +22,7 @@ struct ComputeProgramNode {
 	std::vector<WorkNodeAttribute> attributes;
 
 	std::string   shaderPath; // can be relative to src/
-	std::string   entryPoint;
+	std::string   entryPoint = "main";
 	std::string   shaderProfile;
 	ShaderDefines defines;
 	std::vector<std::string> compileArgs;
@@ -34,11 +40,13 @@ struct ComputeProgramNode {
 	ref<Pipeline> pipeline;
 	std::string   statusText;
 
-	inline static std::filesystem::path GetAbsolutePath(const std::filesystem::path& p) {
-		if (p.is_relative()) // path is relative to src/
-			return std::filesystem::path(std::source_location::current().file_name()).parent_path().parent_path().parent_path();
-		else
-			return p;
+	inline std::filesystem::path GetAbsolutePath() {
+		std::filesystem::path p = shaderPath;
+		if (p.is_relative()) {
+			// p is relative to src/
+			p = kSrcFolder / p;
+		}
+		return p;
 	}
 
 	inline const ShaderModule* GetShader() {
@@ -49,7 +57,7 @@ struct ComputeProgramNode {
 
 	void CreatePipeline(const Device& device) {
 		statusText.clear();
-		auto p = GetAbsolutePath(shaderPath);
+		auto p = GetAbsolutePath();
 		if (!std::filesystem::exists(p)) {
 			statusText = "Could not find file: " + p.string();
 			return;
@@ -77,25 +85,50 @@ struct ComputeProgramNode {
 
 template<> constexpr static const char* kSerializedTypeName<ComputeProgramNode> = "ComputeProgramNode";
 
-template<>
-inline void Serialize(json& data, const ComputeProgramNode& node) {
-	data["shaderPath"] = node.shaderPath;
+inline json& operator<<(json& data, const ComputeProgramNode& node) {
+	data["shaderPath"]    = node.shaderPath;
+	data["entryPoint"]    = node.entryPoint;
+	data["shaderProfile"] = node.shaderProfile;
+	data["defines"]       = node.defines;
+	data["compileArgs"]   = node.compileArgs;
+	return data;
 }
-template<>
-inline void Deserialize(const json& data, ComputeProgramNode& node) {
-	data["shaderPath"].get_to(node.shaderPath);
+inline const json& operator>>(const json& data, ComputeProgramNode& node) {
+	data["shaderPath"]   .get_to(node.shaderPath);
+	data["entryPoint"]   .get_to(node.entryPoint);
+	data["shaderProfile"].get_to(node.shaderProfile);
+	data["defines"]      .get_to(node.defines);
+	data["compileArgs"]  .get_to(node.compileArgs);
+	return data;
 }
 
 inline const auto& GetAttributes(const ComputeProgramNode& node) {
 	return node.attributes;
 }
 
-inline void DrawNode(ComputeProgramNode& node) {
+inline void DrawNode(CommandContext& context, ComputeProgramNode& node) {
 	DrawNodeTitle("Compute Pipeline");
-	ImGui::SetNextItemWidth(200);
-	if (ImGui::InputText("Shader", &node.shaderPath)) {
 
+	{
+		ImGui::SetNextItemWidth(200);
+		bool dirty = ImGui::InputText("Shader", &node.shaderPath);
+		ImGui::SameLine();
+		if (ImGui::Button("Choose...")) {
+			if (auto r = pfd::open_file("Choose shader", kSrcFolder.string(), {
+				//"All files (.*)", "*.*",
+				"Shader files (.slang .hlsl .glsl .vert .frag .geom .tesc .tese .comp)", "*.slang *.hlsl *.glsl *.vert *.frag *.geom *.tesc *.tese *.comp",
+			}, false).result(); !r.empty()) {
+				node.shaderPath = *r.begin();
+				if (std::filesystem::path(node.shaderPath).generic_string().starts_with(kSrcFolder.generic_string()))
+					node.shaderPath = std::filesystem::relative(node.shaderPath, kSrcFolder).string();
+				dirty = true;
+			}
+		}
+		if (dirty) {
+			node.CreatePipeline(context.GetDevice());
+		}
 	}
+
 	for (const auto& a : node.attributes)
 		DrawNodeAttribute(node.nodeId, a);
 

@@ -33,25 +33,25 @@ struct ResourceCopyNode {
 
 template<> constexpr static const char* kSerializedTypeName<ResourceCopyNode> = "ResourceCopyNode";
 
-template<>
-inline void Serialize(json& data, const ResourceCopyNode& node) {
+inline json& operator<<(json& data, const ResourceCopyNode& node) {
 	data["fillValue"] = node.fillValue;
+	return data;
 }
-
-template<>
-inline void Deserialize(const json& data, ResourceCopyNode& node) {
+inline const json& operator>>(const json& data, ResourceCopyNode& node) {
 	node.fillValue = data["fillValue"];
+	return data;
 }
 
 
-inline std::array<WorkNodeAttribute,2> GetAttributes(const ResourceCopyNode& node) {
-	return { ResourceCopyNode::kSrcAttribute, ResourceCopyNode::kDstAttribute };
+inline auto GetAttributes(const ResourceCopyNode& node) {
+	return std::array<WorkNodeAttribute,2>{ ResourceCopyNode::kSrcAttribute, ResourceCopyNode::kDstAttribute };
 }
 
-inline void DrawNode(ResourceCopyNode& node) {
+inline void DrawNode(CommandContext& context, ResourceCopyNode& node) {
 	DrawNodeTitle("Copy Resource");
 	DrawNodeAttribute(node.nodeId, ResourceCopyNode::kOutputAttribute);
 	DrawNodeAttribute(node.nodeId, ResourceCopyNode::kSrcAttribute);
 	DrawNodeAttribute(node.nodeId, ResourceCopyNode::kDstAttribute);
 }
+
 }

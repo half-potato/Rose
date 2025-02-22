@@ -1,8 +1,9 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.23)
 
 project(RoseEngine)
 
 set(ROSE_ENABLE_TESTING ON CACHE BOOL ON)
+set(ROSE_BUILD_APPS     ON CACHE BOOL ON)
 
 # Find dependencies
 
@@ -23,21 +24,31 @@ include_directories(src)
 link_libraries(Vulkan::Vulkan)
 link_libraries(glm)
 
-file(GLOB_RECURSE CORE_SRCS      "${CMAKE_CURRENT_SOURCE_DIR}/src/Core/**.cpp")
-file(GLOB_RECURSE RENDER_SRCS    "${CMAKE_CURRENT_SOURCE_DIR}/src/Render/**.cpp")
-file(GLOB_RECURSE SCENE_SRCS     "${CMAKE_CURRENT_SOURCE_DIR}/src/Scene/**.cpp")
-file(GLOB_RECURSE WORKGRAPH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/WorkGraph/**.cpp")
-file(GLOB         IMGUI_SRCS     "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
-add_library(RoseLib
-	${CORE_SRCS}
-	${RENDER_SRCS}
-	${SCENE_SRCS}
-	${WORKGRAPH_SRCS}
-	${IMGUI_SRCS}
-	thirdparty/ImGuizmo.cpp
-	thirdparty/imnodes.cpp
-	thirdparty/miniz.c
-	thirdparty/pugixml.cpp)
+add_library(RoseLib)
+
+file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.cpp")
+file(GLOB_RECURSE CORE_HPP   "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.hpp")
+file(GLOB_RECURSE CORE_H     "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.h")
+file(GLOB_RECURSE CORE_SLANG "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.slang")
+file(GLOB         IMGUI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
+
+target_sources(RoseLib
+	PUBLIC
+		${CORE_SRCS}
+		${IMGUI_SRCS}
+		thirdparty/ImGuizmo.cpp
+		thirdparty/imnodes.cpp
+		thirdparty/miniz.c
+		thirdparty/pugixml.cpp
+		thirdparty/tinyply.cpp
+	PUBLIC FILE_SET HEADERS
+	BASE_DIRS src/
+	FILES
+		${CORE_HPP}
+		${CORE_H}
+		${CORE_SLANG}
+)
+
 set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
 
 target_link_libraries(RoseLib glfw $ENV{VULKAN_SDK}/Lib/slang.lib)
@@ -69,18 +80,19 @@ if (OpenVDB_FOUND)
     message(STATUS "OpenVDB enabled")
 endif()
 
-configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
+if (ROSE_BUILD_APPS)
+	add_executable(SceneApp src/SceneApp.cpp)
+	target_link_libraries(SceneApp PRIVATE RoseLib)
 
-add_executable(SceneApp src/SceneApp.cpp)
-target_link_libraries(SceneApp PRIVATE RoseLib)
-
-add_executable(TerrainApp src/TerrainApp.cpp)
-target_link_libraries(TerrainApp PRIVATE RoseLib)
-
-add_executable(WorkGraphApp src/WorkGraphApp.cpp)
-target_link_libraries(WorkGraphApp PRIVATE RoseLib)
+	add_executable(WorkGraphApp src/WorkGraphApp.cpp)
+	target_link_libraries(WorkGraphApp PRIVATE RoseLib)
+endif()
 
 if (ROSE_ENABLE_TESTING)
 	enable_testing()
-	add_subdirectory(src/Tests)
+	add_subdirectory(tests)
 endif()
+
+configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
+
+install(TARGETS RoseLib FILE_SET HEADERS)

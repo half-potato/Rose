@@ -8,7 +8,7 @@ using namespace RoseEngine;
 
 int main(int argc, const char** argv) {
 
-	WindowedApp app({
+	WindowedApp app("Terrain", {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
 		VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME });

@@ -1,0 +1,1 @@
+AddTest(Sort Sort.cpp)

@@ -2,14 +2,14 @@
 #define SLANG_CPP_PRELUDE_H
 
 // Because the signiture of isnan, isfinite, and is isinf changed in C++, we use the macro
-// to use the version in the std namespace.
+// to use the version in the std namespace. 
 // https://stackoverflow.com/questions/39130040/cmath-hides-isnan-in-math-h-in-c14-c11
-
+ 
 #ifdef SLANG_LLVM
 #ifndef SLANG_LLVM_H
 #define SLANG_LLVM_H
 
-// TODO(JS):
+// TODO(JS): 
 // Disable exception declspecs, as not supported on LLVM without some extra options.
 // We could enable with `-fms-extensions`
 #define SLANG_DISABLE_EXCEPTIONS 1
@@ -21,12 +21,12 @@ extern "C" void assertFailure(const char* msg);
 #       define SLANG_PRELUDE_ASSERT(VALUE) SLANG_PRELUDE_EXPECT(VALUE, #VALUE)
 #   else // SLANG_PRELUDE_ENABLE_ASSERT
 #       define SLANG_PRELUDE_EXPECT(VALUE, MSG)
-#       define SLANG_PRELUDE_ASSERT(x)
+#       define SLANG_PRELUDE_ASSERT(x) 
 #   endif // SLANG_PRELUDE_ENABLE_ASSERT
 #endif
 
 /*
-Taken from stddef.h
+Taken from stddef.h 
 */
 
 typedef __PTRDIFF_TYPE__ ptrdiff_t;
@@ -57,7 +57,7 @@ using ::std::nullptr_t;
 
 
 /*
-The following are taken verbatim from stdint.h from Clang in LLVM. Only 8/16/32/64 types are needed.
+The following are taken verbatim from stdint.h from Clang in LLVM. Only 8/16/32/64 types are needed. 
 */
 
 // LLVM/Clang types such that we can use LLVM/Clang without headers for C++ output from Slang
@@ -425,17 +425,17 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 #else
 #   define SLANG_PRELUDE_SHARED_LIB_EXPORT __attribute__((__visibility__("default")))
 //#   define SLANG_PRELUDE_SHARED_LIB_EXPORT __attribute__ ((dllexport)) __attribute__((__visibility__("default")))
-#endif
+#endif    
 
-#ifdef __cplusplus
+#ifdef __cplusplus    
 #   define SLANG_PRELUDE_EXTERN_C extern "C"
 #   define SLANG_PRELUDE_EXTERN_C_START extern "C" {
 #   define SLANG_PRELUDE_EXTERN_C_END }
 #else
-#   define SLANG_PRELUDE_EXTERN_C
+#   define SLANG_PRELUDE_EXTERN_C 
 #   define SLANG_PRELUDE_EXTERN_C_START
-#   define SLANG_PRELUDE_EXTERN_C_END
-#endif
+#   define SLANG_PRELUDE_EXTERN_C_END 
+#endif    
 
 #define SLANG_PRELUDE_EXPORT SLANG_PRELUDE_EXTERN_C SLANG_PRELUDE_SHARED_LIB_EXPORT
 #define SLANG_PRELUDE_EXPORT_START SLANG_PRELUDE_EXTERN_C_START SLANG_PRELUDE_SHARED_LIB_EXPORT
@@ -613,7 +613,7 @@ Any platforms not detected by the above logic are now now explicitly zeroed out.
 
 #   define SLANG_BREAKPOINT(id) __builtin_trap()
 
-// Use this macro instead of offsetof, because gcc produces warning if offsetof is used on a
+// Use this macro instead of offsetof, because gcc produces warning if offsetof is used on a 
 // non POD type, even though it produces the correct result
 #   define SLANG_OFFSET_OF(T, ELEMENT) (size_t(&((T*)1)->ELEMENT) - 1)
 #endif // SLANG_GCC_FAMILY
@@ -668,7 +668,7 @@ convention for interface methods.
 #    define SLANG_FORCE_INLINE inline
 #endif
 
-// TODO(JS): Should these be in slang-cpp-types.h?
+// TODO(JS): Should these be in slang-cpp-types.h? 
 // They are more likely to clash with slang.h
 
 struct SlangUUID
@@ -720,7 +720,7 @@ namespace SLANG_PRELUDE_NAMESPACE {
 #endif
 
 
-union Union32
+union Union32 
 {
     uint32_t u;
     int32_t i;
@@ -762,27 +762,27 @@ SLANG_FORCE_INLINE uint32_t f32tof16(const float value)
     if (e == 0xff)
     {
         // Could be a NAN or INF. Is INF if *input* mantissa is 0.
-
+        
         // Remove last bit for rounding to make output mantissa.
         m >>= 1;
-
+       
         // We *assume* float16/float32 signaling bit and remaining bits
         // semantics are the same. (The signalling bit convention is target specific!).
         // Non signal bit's usage within mantissa for a NAN are also target specific.
-
-        // If the m is 0, it could be because the result is INF, but it could also be because all the
-        // bits that made NAN were dropped as we have less mantissa bits in f16.
-
+      
+        // If the m is 0, it could be because the result is INF, but it could also be because all the 
+        // bits that made NAN were dropped as we have less mantissa bits in f16. 
+           
         // To fix for this we make non zero if m is 0 and the input mantissa was not.
         // This will (typically) produce a signalling NAN.
         m += uint32_t(m == 0 && (inBits & 0x007fffffu));
-
+       
         // Combine for output
         return (bits | 0x7c00u | m);
     }
     if (e > 142)
     {
-        // INF.
+        // INF. 
         return bits | 0x7c00u;
     }
     if (e < 113)
@@ -806,7 +806,7 @@ SLANG_FORCE_INLINE float f16tof32(const uint32_t value)
 
     if (exponent == 0)
     {
-        // If mantissa is 0 we are done, as output is 0.
+        // If mantissa is 0 we are done, as output is 0. 
         // If it's not zero we must have a denormal.
         if (mantissa)
         {
@@ -814,16 +814,16 @@ SLANG_FORCE_INLINE float f16tof32(const uint32_t value)
             return _bitCastIntToFloat(sign | ((value & 0x7fff) << 13)) * g_f16tof32Magic;
         }
     }
-    else
+    else 
     {
-        // If the exponent is NAN or INF exponent is 0x1f on input.
+        // If the exponent is NAN or INF exponent is 0x1f on input. 
         // If that's the case, we just need to set the exponent to 0xff on output
         // and the mantissa can just stay the same. If its 0 it's INF, else it is NAN and we just copy the bits
         //
         // Else we need to correct the exponent in the normalized case.
         exponent = (exponent == 0x1F) ? 0xff : (exponent + (-15 + 127));
     }
-
+    
     return _bitCastUIntToFloat(sign | (exponent << 23) | (mantissa << 13));
 }
 
@@ -836,7 +836,7 @@ SLANG_FORCE_INLINE float F32_calcSafeRadians(float radians);
 
 SLANG_PRELUDE_EXTERN_C_START
 
-// Unary
+// Unary 
 float F32_ceil(float f);
 float F32_floor(float f);
 float F32_round(float f);
@@ -859,7 +859,7 @@ float F32_trunc(float f);
 float F32_sqrt(float f);
 
 bool F32_isnan(float f);
-bool F32_isfinite(float f);
+bool F32_isfinite(float f); 
 bool F32_isinf(float f);
 
 // Binary
@@ -881,7 +881,7 @@ SLANG_PRELUDE_EXTERN_C_END
 
 #else
 
-// Unary
+// Unary 
 SLANG_FORCE_INLINE float F32_ceil(float f) { return ::ceilf(f); }
 SLANG_FORCE_INLINE float F32_floor(float f) { return ::floorf(f); }
 SLANG_FORCE_INLINE float F32_round(float f) { return ::roundf(f); }
@@ -929,7 +929,7 @@ SLANG_FORCE_INLINE float F32_fma(float a, float b, float c) { return ::fmaf(a, b
 
 SLANG_FORCE_INLINE float F32_calcSafeRadians(float radians)
 {
-    // Put 0 to 2pi cycles to cycle around 0 to 1
+    // Put 0 to 2pi cycles to cycle around 0 to 1 
 	float a = radians * (1.0f /  float(SLANG_PRELUDE_PI * 2));
     // Get truncated fraction, as value in  0 - 1 range
     a = a - F32_floor(a);
@@ -938,7 +938,7 @@ SLANG_FORCE_INLINE float F32_calcSafeRadians(float radians)
 }
 
 SLANG_FORCE_INLINE float F32_rsqrt(float f) { return 1.0f / F32_sqrt(f); }
-SLANG_FORCE_INLINE float F32_sign(float f) { return ( f == 0.0f) ? f : (( f < 0.0f) ? -1.0f : 1.0f); }
+SLANG_FORCE_INLINE float F32_sign(float f) { return ( f == 0.0f) ? f : (( f < 0.0f) ? -1.0f : 1.0f); } 
 SLANG_FORCE_INLINE float F32_frac(float f) { return f - F32_floor(f); }
 
 SLANG_FORCE_INLINE uint32_t F32_asuint(float f) { Union32 u; u.f = f; return u.u; }
@@ -952,7 +952,7 @@ SLANG_FORCE_INLINE double F64_calcSafeRadians(double radians);
 
 SLANG_PRELUDE_EXTERN_C_START
 
-// Unary
+// Unary 
 double F64_ceil(double f);
 double F64_floor(double f);
 double F64_round(double f);
@@ -997,7 +997,7 @@ SLANG_PRELUDE_EXTERN_C_END
 
 #else // SLANG_LLVM
 
-// Unary
+// Unary 
 SLANG_FORCE_INLINE double F64_ceil(double f) { return ::ceil(f); }
 SLANG_FORCE_INLINE double F64_floor(double f) { return ::floor(f); }
 SLANG_FORCE_INLINE double F64_round(double f) { return ::round(f); }
@@ -1066,7 +1066,7 @@ SLANG_FORCE_INLINE void F64_asint(double d, int32_t* low, int32_t* hi)
 
 SLANG_FORCE_INLINE double F64_calcSafeRadians(double radians)
 {
-    // Put 0 to 2pi cycles to cycle around 0 to 1
+    // Put 0 to 2pi cycles to cycle around 0 to 1 
 	double a = radians * (1.0f /  (SLANG_PRELUDE_PI * 2));
     // Get truncated fraction, as value in  0 - 1 range
     a = a - F64_floor(a);
@@ -1098,7 +1098,7 @@ SLANG_FORCE_INLINE uint32_t U32_min(uint32_t a, uint32_t b) { return a < b ? a :
 SLANG_FORCE_INLINE uint32_t U32_max(uint32_t a, uint32_t b) { return a > b ? a : b; }
 
 SLANG_FORCE_INLINE float U32_asfloat(uint32_t x) { Union32 u; u.u = x; return u.f; }
-SLANG_FORCE_INLINE uint32_t U32_asint(int32_t x) { return uint32_t(x); }
+SLANG_FORCE_INLINE uint32_t U32_asint(int32_t x) { return uint32_t(x); } 
 
 SLANG_FORCE_INLINE double U32_asdouble(uint32_t low, uint32_t hi)
 {
@@ -1114,7 +1114,7 @@ SLANG_FORCE_INLINE uint32_t U32_countbits(uint32_t v)
     return __builtin_popcount(v);
 #elif SLANG_PROCESSOR_X86_64 && SLANG_VC
     return __popcnt(v);
-#else
+#else     
     uint32_t c = 0;
     while (v)
     {
@@ -1133,15 +1133,15 @@ SLANG_FORCE_INLINE uint64_t U64_min(uint64_t a, uint64_t b) { return a < b ? a :
 SLANG_FORCE_INLINE uint64_t U64_max(uint64_t a, uint64_t b) { return a > b ? a : b; }
 
 // TODO(JS): We don't define countbits for 64bit in stdlib currently.
-// It's not clear from documentation if it should return 32 or 64 bits, if it exists.
-// 32 bits can always hold the result, and will be implicitly promoted.
+// It's not clear from documentation if it should return 32 or 64 bits, if it exists. 
+// 32 bits can always hold the result, and will be implicitly promoted. 
 SLANG_FORCE_INLINE uint32_t U64_countbits(uint64_t v)
 {
-#if SLANG_GCC_FAMILY && !defined(SLANG_LLVM)
+#if SLANG_GCC_FAMILY && !defined(SLANG_LLVM)   
     return uint32_t(__builtin_popcountl(v));
 #elif SLANG_PROCESSOR_X86_64 && SLANG_VC
     return uint32_t(__popcnt64(v));
-#else
+#else     
     uint32_t c = 0;
     while (v)
     {
@@ -1193,7 +1193,7 @@ SLANG_FORCE_INLINE double _slang_fmod(double x, double y)
 }
 
 #ifdef SLANG_PRELUDE_NAMESPACE
-}
+} 
 #endif
 
 #endif
@@ -1216,7 +1216,7 @@ namespace SLANG_PRELUDE_NAMESPACE {
 #   ifdef SLANG_PRELUDE_ENABLE_ASSERT
 #       define SLANG_PRELUDE_ASSERT(VALUE) assert(VALUE)
 #   else
-#       define SLANG_PRELUDE_ASSERT(VALUE)
+#       define SLANG_PRELUDE_ASSERT(VALUE) 
 #   endif
 #endif
 
@@ -1226,12 +1226,12 @@ namespace SLANG_PRELUDE_NAMESPACE {
 
 // Asserts for bounds checking.
 // It is assumed index/count are unsigned types.
-#define SLANG_BOUND_ASSERT(index, count)  SLANG_PRELUDE_ASSERT(index < count);
+#define SLANG_BOUND_ASSERT(index, count)  SLANG_PRELUDE_ASSERT(index < count); 
 #define SLANG_BOUND_ASSERT_BYTE_ADDRESS(index, elemSize, sizeInBytes) SLANG_PRELUDE_ASSERT(index <= (sizeInBytes - elemSize) && (index & 3) == 0);
 
 // Macros to zero index if an access is out of range
-#define SLANG_BOUND_ZERO_INDEX(index, count) index = (index < count) ? index : 0;
-#define SLANG_BOUND_ZERO_INDEX_BYTE_ADDRESS(index, elemSize, sizeInBytes) index = (index <= (sizeInBytes - elemSize)) ? index : 0;
+#define SLANG_BOUND_ZERO_INDEX(index, count) index = (index < count) ? index : 0; 
+#define SLANG_BOUND_ZERO_INDEX_BYTE_ADDRESS(index, elemSize, sizeInBytes) index = (index <= (sizeInBytes - elemSize)) ? index : 0; 
 
 // The 'FIX' macro define how the index is fixed. The default is to do nothing. If SLANG_ENABLE_BOUND_ZERO_INDEX
 // the fix macro will zero the index, if out of range
@@ -1240,9 +1240,9 @@ namespace SLANG_PRELUDE_NAMESPACE {
 #   define SLANG_BOUND_FIX_BYTE_ADDRESS(index, elemSize, sizeInBytes) SLANG_BOUND_ZERO_INDEX_BYTE_ADDRESS(index, elemSize, sizeInBytes)
 #   define SLANG_BOUND_FIX_FIXED_ARRAY(index, count) SLANG_BOUND_ZERO_INDEX(index, count)
 #else
-#   define SLANG_BOUND_FIX(index, count)
-#   define SLANG_BOUND_FIX_BYTE_ADDRESS(index, elemSize, sizeInBytes)
-#   define SLANG_BOUND_FIX_FIXED_ARRAY(index, count)
+#   define SLANG_BOUND_FIX(index, count) 
+#   define SLANG_BOUND_FIX_BYTE_ADDRESS(index, elemSize, sizeInBytes) 
+#   define SLANG_BOUND_FIX_FIXED_ARRAY(index, count) 
 #endif
 
 #ifndef SLANG_BOUND_CHECK
@@ -1271,8 +1271,8 @@ struct FixedArray
     T m_data[SIZE];
 };
 
-// An array that has no specified size, becomes a 'Array'. This stores the size so it can potentially
-// do bounds checking.
+// An array that has no specified size, becomes a 'Array'. This stores the size so it can potentially 
+// do bounds checking.  
 template <typename T>
 struct Array
 {
@@ -1410,7 +1410,7 @@ struct Vector<T, 4>
         for (int i = 0; i < minSize; i++)
             (*this)[i] = (T)other[i];
     }
-
+ 
 };
 
 template<typename T, int N>
@@ -1814,9 +1814,9 @@ template <typename T>
 struct RWStructuredBuffer
 {
     SLANG_FORCE_INLINE T& operator[](size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
-    const T& Load(size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
+    const T& Load(size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }  
     void GetDimensions(uint32_t* outNumStructs, uint32_t* outStride) { *outNumStructs = uint32_t(count); *outStride = uint32_t(sizeof(T)); }
-
+  
     T* data;
     size_t count;
 };
@@ -1827,7 +1827,7 @@ struct StructuredBuffer
     SLANG_FORCE_INLINE const T& operator[](size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
     const T& Load(size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
     void GetDimensions(uint32_t* outNumStructs, uint32_t* outStride) { *outNumStructs = uint32_t(count); *outStride = uint32_t(sizeof(T)); }
-
+    
     T* data;
     size_t count;
 };
@@ -1839,7 +1839,7 @@ struct RWBuffer
     SLANG_FORCE_INLINE T& operator[](size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
     const T& Load(size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
     void GetDimensions(uint32_t* outCount) { *outCount = uint32_t(count); }
-
+    
     T* data;
     size_t count;
 };
@@ -1850,7 +1850,7 @@ struct Buffer
     SLANG_FORCE_INLINE const T& operator[](size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
     const T& Load(size_t index) const { SLANG_BOUND_CHECK(index, count); return data[index]; }
     void GetDimensions(uint32_t* outCount) { *outCount = uint32_t(count); }
-
+    
     T* data;
     size_t count;
 };
@@ -1859,28 +1859,28 @@ struct Buffer
 struct ByteAddressBuffer
 {
     void GetDimensions(uint32_t* outDim) const { *outDim = uint32_t(sizeInBytes); }
-    uint32_t Load(size_t index) const
-    {
+    uint32_t Load(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 4, sizeInBytes);
-        return data[index >> 2];
+        return data[index >> 2]; 
     }
-    uint2 Load2(size_t index) const
-    {
+    uint2 Load2(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 8, sizeInBytes);
-        const size_t dataIdx = index >> 2;
-        return uint2{data[dataIdx], data[dataIdx + 1]};
+        const size_t dataIdx = index >> 2; 
+        return uint2{data[dataIdx], data[dataIdx + 1]}; 
     }
-    uint3 Load3(size_t index) const
-    {
+    uint3 Load3(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 12, sizeInBytes);
-        const size_t dataIdx = index >> 2;
-        return uint3{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2]};
+        const size_t dataIdx = index >> 2; 
+        return uint3{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2]}; 
     }
-    uint4 Load4(size_t index) const
-    {
+    uint4 Load4(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 16, sizeInBytes);
-        const size_t dataIdx = index >> 2;
-        return uint4{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2], data[dataIdx + 3]};
+        const size_t dataIdx = index >> 2; 
+        return uint4{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2], data[dataIdx + 3]}; 
     }
     template<typename T>
     T Load(size_t index) const
@@ -1888,40 +1888,40 @@ struct ByteAddressBuffer
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, sizeof(T), sizeInBytes);
         return *(const T*)(((const char*)data) + index);
     }
-
+    
     const uint32_t* data;
     size_t sizeInBytes;  //< Must be multiple of 4
 };
 
 // https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sm5-object-rwbyteaddressbuffer
-// Missing support for Atomic operations
+// Missing support for Atomic operations 
 // Missing support for Load with status
 struct RWByteAddressBuffer
 {
     void GetDimensions(uint32_t* outDim) const { *outDim = uint32_t(sizeInBytes); }
-
-    uint32_t Load(size_t index) const
-    {
+    
+    uint32_t Load(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 4, sizeInBytes);
-        return data[index >> 2];
+        return data[index >> 2]; 
     }
-    uint2 Load2(size_t index) const
-    {
+    uint2 Load2(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 8, sizeInBytes);
-        const size_t dataIdx = index >> 2;
-        return uint2{data[dataIdx], data[dataIdx + 1]};
+        const size_t dataIdx = index >> 2; 
+        return uint2{data[dataIdx], data[dataIdx + 1]}; 
     }
-    uint3 Load3(size_t index) const
-    {
+    uint3 Load3(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 12, sizeInBytes);
-        const size_t dataIdx = index >> 2;
-        return uint3{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2]};
+        const size_t dataIdx = index >> 2; 
+        return uint3{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2]}; 
     }
-    uint4 Load4(size_t index) const
-    {
+    uint4 Load4(size_t index) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 16, sizeInBytes);
-        const size_t dataIdx = index >> 2;
-        return uint4{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2], data[dataIdx + 3]};
+        const size_t dataIdx = index >> 2; 
+        return uint4{data[dataIdx], data[dataIdx + 1], data[dataIdx + 2], data[dataIdx + 3]}; 
     }
     template<typename T>
     T Load(size_t index) const
@@ -1930,30 +1930,30 @@ struct RWByteAddressBuffer
         return *(const T*)(((const char*)data) + index);
     }
 
-    void Store(size_t index, uint32_t v) const
-    {
+    void Store(size_t index, uint32_t v) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 4, sizeInBytes);
-        data[index >> 2] = v;
+        data[index >> 2] = v; 
     }
-    void Store2(size_t index, uint2 v) const
-    {
+    void Store2(size_t index, uint2 v) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 8, sizeInBytes);
-        const size_t dataIdx = index >> 2;
+        const size_t dataIdx = index >> 2; 
         data[dataIdx + 0] = v.x;
         data[dataIdx + 1] = v.y;
     }
-    void Store3(size_t index, uint3 v) const
-    {
+    void Store3(size_t index, uint3 v) const 
+    {  
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 12, sizeInBytes);
-        const size_t dataIdx = index >> 2;
+        const size_t dataIdx = index >> 2; 
         data[dataIdx + 0] = v.x;
         data[dataIdx + 1] = v.y;
         data[dataIdx + 2] = v.z;
     }
-    void Store4(size_t index, uint4 v) const
-    {
+    void Store4(size_t index, uint4 v) const 
+    { 
         SLANG_BOUND_CHECK_BYTE_ADDRESS(index, 16, sizeInBytes);
-        const size_t dataIdx = index >> 2;
+        const size_t dataIdx = index >> 2; 
         data[dataIdx + 0] = v.x;
         data[dataIdx + 1] = v.y;
         data[dataIdx + 2] = v.z;
@@ -1967,7 +1967,7 @@ struct RWByteAddressBuffer
     }
 
     uint32_t* data;
-    size_t sizeInBytes; //< Must be multiple of 4
+    size_t sizeInBytes; //< Must be multiple of 4 
 };
 
 struct ISamplerState;
@@ -2021,7 +2021,7 @@ enum
 };
 #endif
 
-//
+// 
 struct TextureDimensions
 {
     void reset()
@@ -2144,36 +2144,36 @@ template <typename T>
 struct Texture1D
 {
     void GetDimensions(uint32_t* outWidth) { *outWidth = texture->GetDimensions().width; }
-    void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outNumberOfLevels)
-    {
-        auto dims = texture->GetDimensions(mipLevel);
-        *outWidth = dims.width;
-        *outNumberOfLevels = dims.numberOfLevels;
+    void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outNumberOfLevels) 
+    { 
+        auto dims = texture->GetDimensions(mipLevel); 
+        *outWidth = dims.width; 
+        *outNumberOfLevels = dims.numberOfLevels; 
     }
-
+    
     void GetDimensions(float* outWidth) { *outWidth = texture->GetDimensions().width; }
-    void GetDimensions(uint32_t mipLevel, float* outWidth, float* outNumberOfLevels)
-    {
-        auto dims = texture->GetDimensions(mipLevel);
-        *outWidth = dims.width;
-        *outNumberOfLevels = dims.numberOfLevels;
+    void GetDimensions(uint32_t mipLevel, float* outWidth, float* outNumberOfLevels) 
+    { 
+        auto dims = texture->GetDimensions(mipLevel); 
+        *outWidth = dims.width; 
+        *outNumberOfLevels = dims.numberOfLevels; 
     }
-
+    
     T Load(const int2& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T Sample(SamplerState samplerState, float loc) const { T out; texture->Sample(samplerState, &loc, &out, sizeof(out)); return out; }
     T SampleLevel(SamplerState samplerState, float loc, float level) { T out; texture->SampleLevel(samplerState, &loc, level, &out, sizeof(out)); return out; }
-
-    ITexture* texture;
+    
+    ITexture* texture;              
 };
 
 template <typename T>
 struct Texture2D
 {
-    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outNumberOfLevels)
     {
@@ -2182,11 +2182,11 @@ struct Texture2D
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-    void GetDimensions(float* outWidth, float* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(float* outWidth, float* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outNumberOfLevels)
     {
@@ -2195,12 +2195,12 @@ struct Texture2D
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Load(const int3& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T Sample(SamplerState samplerState, const float2& loc) const { T out; texture->Sample(samplerState, &loc.x, &out, sizeof(out)); return out; }
     T SampleLevel(SamplerState samplerState, const float2& loc, float level) { T out; texture->SampleLevel(samplerState, &loc.x, level, &out, sizeof(out)); return out; }
-
-    ITexture* texture;
+    
+    ITexture* texture;              
 };
 
 template <typename T>
@@ -2208,9 +2208,9 @@ struct Texture3D
 {
     void GetDimensions(uint32_t* outWidth, uint32_t* outHeight, uint32_t* outDepth)
     {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
         *outDepth = dims.depth;
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outDepth, uint32_t* outNumberOfLevels)
@@ -2223,9 +2223,9 @@ struct Texture3D
     }
     void GetDimensions(float* outWidth, float* outHeight, float* outDepth)
     {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
         *outDepth = dims.depth;
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outDepth, float* outNumberOfLevels)
@@ -2236,22 +2236,22 @@ struct Texture3D
         *outDepth = dims.depth;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Load(const int4& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T Sample(SamplerState samplerState, const float3& loc) const { T out; texture->Sample(samplerState, &loc.x, &out, sizeof(out)); return out; }
     T SampleLevel(SamplerState samplerState, const float3& loc, float level) { T out; texture->SampleLevel(samplerState, &loc.x, level, &out, sizeof(out)); return out; }
-
-    ITexture* texture;
+    
+    ITexture* texture;              
 };
 
 template <typename T>
 struct TextureCube
 {
-    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outNumberOfLevels)
     {
@@ -2260,11 +2260,11 @@ struct TextureCube
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-    void GetDimensions(float* outWidth, float* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(float* outWidth, float* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outNumberOfLevels)
     {
@@ -2273,38 +2273,38 @@ struct TextureCube
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Sample(SamplerState samplerState, const float3& loc) const { T out; texture->Sample(samplerState, &loc.x, &out, sizeof(out)); return out; }
     T SampleLevel(SamplerState samplerState, const float3& loc, float level) { T out; texture->SampleLevel(samplerState, &loc.x, level, &out, sizeof(out)); return out; }
-
-    ITexture* texture;
+    
+    ITexture* texture;              
 };
 
 template <typename T>
 struct Texture1DArray
 {
     void GetDimensions(uint32_t* outWidth, uint32_t* outElements) { auto dims = texture->GetDimensions(); *outWidth = dims.width; *outElements = dims.arrayElementCount; }
-    void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outElements, uint32_t* outNumberOfLevels)
+    void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outElements, uint32_t* outNumberOfLevels) 
     {
-        auto dims = texture->GetDimensions(mipLevel);
-        *outWidth = dims.width;
+        auto dims = texture->GetDimensions(mipLevel); 
+        *outWidth = dims.width; 
         *outNumberOfLevels = dims.numberOfLevels;
-        *outElements = dims.arrayElementCount;
-    }
+        *outElements = dims.arrayElementCount; 
+    }        
     void GetDimensions(float* outWidth, float* outElements) { auto dims = texture->GetDimensions(); *outWidth = dims.width; *outElements = dims.arrayElementCount; }
-    void GetDimensions(uint32_t mipLevel, float* outWidth, float* outElements, float* outNumberOfLevels)
+    void GetDimensions(uint32_t mipLevel, float* outWidth, float* outElements, float* outNumberOfLevels) 
     {
-        auto dims = texture->GetDimensions(mipLevel);
-        *outWidth = dims.width;
+        auto dims = texture->GetDimensions(mipLevel); 
+        *outWidth = dims.width; 
         *outNumberOfLevels = dims.numberOfLevels;
-        *outElements = dims.arrayElementCount;
+        *outElements = dims.arrayElementCount; 
     }
-
+    
     T Load(const int3& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T Sample(SamplerState samplerState, const float2& loc) const { T out; texture->Sample(samplerState, &loc.x, &out, sizeof(out)); return out; }
     T SampleLevel(SamplerState samplerState, const float2& loc, float level) { T out; texture->SampleLevel(samplerState, &loc.x, level, &out, sizeof(out)); return out; }
-
-    ITexture* texture;
+    
+    ITexture* texture;              
 };
 
 template <typename T>
@@ -2325,7 +2325,7 @@ struct Texture2DArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     void GetDimensions(uint32_t* outWidth, float* outHeight, float* outElements)
     {
         auto dims = texture->GetDimensions();
@@ -2341,12 +2341,12 @@ struct Texture2DArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Load(const int4& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T Sample(SamplerState samplerState, const float3& loc) const { T out; texture->Sample(samplerState, &loc.x, &out, sizeof(out)); return out; }
     T SampleLevel(SamplerState samplerState, const float3& loc, float level) { T out; texture->SampleLevel(samplerState, &loc.x, level, &out, sizeof(out)); return out; }
-
-    ITexture* texture;
+    
+    ITexture* texture;              
 };
 
 template <typename T>
@@ -2367,7 +2367,7 @@ struct TextureCubeArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     void GetDimensions(uint32_t* outWidth, float* outHeight, float* outElements)
     {
         auto dims = texture->GetDimensions();
@@ -2383,18 +2383,18 @@ struct TextureCubeArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Sample(SamplerState samplerState, const float4& loc) const { T out; texture->Sample(samplerState, &loc.x, &out, sizeof(out)); return out; }
     T SampleLevel(SamplerState samplerState, const float4& loc, float level) { T out; texture->SampleLevel(samplerState, &loc.x, level, &out, sizeof(out)); return out; }
-
-    ITexture* texture;
+    
+    ITexture* texture;              
 };
 
 /* !!!!!!!!!!!!!!!!!!!!!!!!!!! RWTexture !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
 
 struct IRWTexture : ITexture
 {
-        /// Get the reference to the element at loc.
+        /// Get the reference to the element at loc. 
     virtual void* refAt(const uint32_t* loc) = 0;
 };
 
@@ -2403,23 +2403,23 @@ struct RWTexture1D
 {
     void GetDimensions(uint32_t* outWidth) { *outWidth = texture->GetDimensions().width; }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outNumberOfLevels) { auto dims = texture->GetDimensions(mipLevel); *outWidth = dims.width; *outNumberOfLevels = dims.numberOfLevels; }
-
+    
     void GetDimensions(float* outWidth) { *outWidth = texture->GetDimensions().width; }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outNumberOfLevels) { auto dims = texture->GetDimensions(mipLevel); *outWidth = dims.width; *outNumberOfLevels = dims.numberOfLevels; }
-
+    
     T Load(int32_t loc) const { T out; texture->Load(&loc, &out, sizeof(out)); return out; }
     T& operator[](uint32_t loc) { return *(T*)texture->refAt(&loc); }
-    IRWTexture* texture;
+    IRWTexture* texture;              
 };
 
 template <typename T>
 struct RWTexture2D
 {
-    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outNumberOfLevels)
     {
@@ -2428,11 +2428,11 @@ struct RWTexture2D
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-    void GetDimensions(float* outWidth, float* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(float* outWidth, float* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outNumberOfLevels)
     {
@@ -2441,7 +2441,7 @@ struct RWTexture2D
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Load(const int2& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T& operator[](const uint2& loc) { return *(T*)texture->refAt(&loc.x); }
     IRWTexture* texture;
@@ -2452,9 +2452,9 @@ struct RWTexture3D
 {
     void GetDimensions(uint32_t* outWidth, uint32_t* outHeight, uint32_t* outDepth)
     {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
         *outDepth = dims.depth;
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outDepth, uint32_t* outNumberOfLevels)
@@ -2467,9 +2467,9 @@ struct RWTexture3D
     }
     void GetDimensions(float* outWidth, float* outHeight, float* outDepth)
     {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
         *outDepth = dims.depth;
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outDepth, float* outNumberOfLevels)
@@ -2480,7 +2480,7 @@ struct RWTexture3D
         *outDepth = dims.depth;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Load(const int3& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T& operator[](const uint3& loc) { return *(T*)texture->refAt(&loc.x); }
     IRWTexture* texture;
@@ -2490,11 +2490,11 @@ struct RWTexture3D
 template <typename T>
 struct RWTexture1DArray
 {
-    void GetDimensions(uint32_t* outWidth, uint32_t* outElements)
-    {
-        auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outElements = dims.arrayElementCount;
+    void GetDimensions(uint32_t* outWidth, uint32_t* outElements) 
+    { 
+        auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outElements = dims.arrayElementCount; 
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outElements, uint32_t* outNumberOfLevels)
     {
@@ -2503,11 +2503,11 @@ struct RWTexture1DArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-    void GetDimensions(float* outWidth, float* outElements)
-    {
-        auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outElements = dims.arrayElementCount;
+    void GetDimensions(float* outWidth, float* outElements) 
+    { 
+        auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outElements = dims.arrayElementCount; 
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outElements, float* outNumberOfLevels)
     {
@@ -2516,7 +2516,7 @@ struct RWTexture1DArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Load(int2 loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T& operator[](uint2 loc) { return *(T*)texture->refAt(&loc.x); }
 
@@ -2528,10 +2528,10 @@ struct RWTexture2DArray
 {
     void GetDimensions(uint32_t* outWidth, uint32_t* outHeight, uint32_t* outElements)
     {
-        auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
+        auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
         *outHeight = dims.height;
-        *outElements = dims.arrayElementCount;
+        *outElements = dims.arrayElementCount; 
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outElements, uint32_t* outNumberOfLevels)
     {
@@ -2543,10 +2543,10 @@ struct RWTexture2DArray
     }
     void GetDimensions(float* outWidth, float* outHeight, float* outElements)
     {
-        auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
+        auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
         *outHeight = dims.height;
-        *outElements = dims.arrayElementCount;
+        *outElements = dims.arrayElementCount; 
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outElements, float* outNumberOfLevels)
     {
@@ -2556,7 +2556,7 @@ struct RWTexture2DArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     T Load(const int3& loc) const { T out; texture->Load(&loc.x, &out, sizeof(out)); return out; }
     T& operator[](const uint3& loc) { return *(T*)texture->refAt(&loc.x); }
 
@@ -2573,23 +2573,23 @@ struct IFeedbackTexture
 {
     virtual TextureDimensions GetDimensions(int mipLevel = -1) = 0;
 
-    // Note here we pass the optional clamp parameter as a pointer. Passing nullptr means no clamp.
+    // Note here we pass the optional clamp parameter as a pointer. Passing nullptr means no clamp. 
     // This was preferred over having two function definitions, and having to differentiate their names
     virtual void WriteSamplerFeedback(ITexture* tex, SamplerState samp, const float* location, const float* clamp = nullptr) = 0;
     virtual void WriteSamplerFeedbackBias(ITexture* tex, SamplerState samp, const float* location, float bias, const float* clamp = nullptr) = 0;
     virtual void WriteSamplerFeedbackGrad(ITexture* tex, SamplerState samp, const float* location, const float* ddx, const float* ddy, const float* clamp = nullptr) = 0;
-
+    
     virtual void WriteSamplerFeedbackLevel(ITexture* tex, SamplerState samp, const float* location, float lod) = 0;
 };
 
 template <typename T>
 struct FeedbackTexture2D
 {
-    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(uint32_t* outWidth, uint32_t* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outNumberOfLevels)
     {
@@ -2598,11 +2598,11 @@ struct FeedbackTexture2D
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-    void GetDimensions(float* outWidth, float* outHeight)
-    {
-        const auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
-        *outHeight = dims.height;
+    void GetDimensions(float* outWidth, float* outHeight) 
+    { 
+        const auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
+        *outHeight = dims.height; 
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outNumberOfLevels)
     {
@@ -2611,9 +2611,9 @@ struct FeedbackTexture2D
         *outHeight = dims.height;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     template <typename S>
-    void WriteSamplerFeedback(Texture2D<S> tex, SamplerState samp, float2 location, float clamp) { texture->WriteSamplerFeedback(tex.texture, samp, &location.x, &clamp); }
+    void WriteSamplerFeedback(Texture2D<S> tex, SamplerState samp, float2 location, float clamp) { texture->WriteSamplerFeedback(tex.texture, samp, &location.x, &clamp); } 
 
     template <typename S>
     void WriteSamplerFeedbackBias(Texture2D<S> tex, SamplerState samp, float2 location, float bias, float clamp) { texture->WriteSamplerFeedbackBias(tex.texture, samp, &location.x, bias, &clamp); }
@@ -2623,19 +2623,19 @@ struct FeedbackTexture2D
 
     // Level
 
-    template <typename S>
+    template <typename S> 
     void WriteSamplerFeedbackLevel(Texture2D<S> tex, SamplerState samp, float2 location, float lod) { texture->WriteSamplerFeedbackLevel(tex.texture, samp, &location.x, lod); }
-
+    
     // Without Clamp
-    template <typename S>
+    template <typename S> 
     void WriteSamplerFeedback(Texture2D<S> tex, SamplerState samp, float2 location) { texture->WriteSamplerFeedback(tex.texture, samp, &location.x); }
 
-    template <typename S>
+    template <typename S> 
     void WriteSamplerFeedbackBias(Texture2D<S> tex, SamplerState samp, float2 location, float bias) { texture->WriteSamplerFeedbackBias(tex.texture, samp, &location.x, bias); }
 
-    template <typename S>
+    template <typename S> 
     void WriteSamplerFeedbackGrad(Texture2D<S> tex, SamplerState samp, float2 location, float2 ddx, float2 ddy) { texture->WriteSamplerFeedbackGrad(tex.texture, samp, &location.x, &ddx.x, &ddy.x); }
-
+    
     IFeedbackTexture* texture;
 };
 
@@ -2644,10 +2644,10 @@ struct FeedbackTexture2DArray
 {
     void GetDimensions(uint32_t* outWidth, uint32_t* outHeight, uint32_t* outElements)
     {
-        auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
+        auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
         *outHeight = dims.height;
-        *outElements = dims.arrayElementCount;
+        *outElements = dims.arrayElementCount; 
     }
     void GetDimensions(uint32_t mipLevel, uint32_t* outWidth, uint32_t* outHeight, uint32_t* outElements, uint32_t* outNumberOfLevels)
     {
@@ -2659,10 +2659,10 @@ struct FeedbackTexture2DArray
     }
     void GetDimensions(float* outWidth, float* outHeight, float* outElements)
     {
-        auto dims = texture->GetDimensions();
-        *outWidth = dims.width;
+        auto dims = texture->GetDimensions(); 
+        *outWidth = dims.width; 
         *outHeight = dims.height;
-        *outElements = dims.arrayElementCount;
+        *outElements = dims.arrayElementCount; 
     }
     void GetDimensions(uint32_t mipLevel, float* outWidth, float* outHeight, float* outElements, float* outNumberOfLevels)
     {
@@ -2672,7 +2672,7 @@ struct FeedbackTexture2DArray
         *outElements = dims.arrayElementCount;
         *outNumberOfLevels = dims.numberOfLevels;
     }
-
+    
     template <typename S>
     void WriteSamplerFeedback(Texture2DArray<S> texArray, SamplerState samp, float3 location, float clamp) { texture->WriteSamplerFeedback(texArray.texture, samp, &location.x, &clamp); }
 
@@ -2696,7 +2696,7 @@ struct FeedbackTexture2DArray
 
     template <typename S>
     void WriteSamplerFeedbackGrad(Texture2DArray<S> texArray, SamplerState samp, float3 location, float3 ddx, float3 ddy) { texture->WriteSamplerFeedbackGrad(texArray.texture, samp, &location.x, &ddx.x, &ddy.x); }
-
+    
     IFeedbackTexture* texture;
 };
 
@@ -2730,7 +2730,7 @@ typedef void(*ComputeFunc)(ComputeVaryingInput* varyingInput, void* uniformEntry
 
 
 
-// TODO(JS): Hack! Output C++ code from slang can copy uninitialized variables.
+// TODO(JS): Hack! Output C++ code from slang can copy uninitialized variables. 
 #if defined(_MSC_VER)
 #   pragma warning(disable : 4700)
 #endif
@@ -2746,6 +2746,7 @@ using namespace SLANG_PRELUDE_NAMESPACE;
 #endif
 
 
+#line 2 "D:/local/Rose/tests/Program/Program.cs.slang"
 struct SLANG_ParameterGroup_PushConstants_0
 {
     float scale_0;
@@ -2753,6 +2754,7 @@ struct SLANG_ParameterGroup_PushConstants_0
 };
 
 
+#line 17
 struct GlobalParams_0
 {
     SLANG_ParameterGroup_PushConstants_0* PushConstants_0;
@@ -2763,25 +2765,32 @@ struct GlobalParams_0
 };
 
 
+#line 17
 struct KernelContext_0
 {
     GlobalParams_0* globalParams_0;
 };
 
 
+#line 15
 void _testMain(void* _S1, void* entryPointParams_0, void* globalParams_1)
 {
 
+#line 15
     ComputeThreadVaryingInput * _S2 = (slang_bit_cast<ComputeThreadVaryingInput *>(_S1));
 
+#line 15
     KernelContext_0 kernelContext_0;
 
+#line 15
     (&kernelContext_0)->globalParams_0 = (slang_bit_cast<GlobalParams_0*>(globalParams_1));
     uint32_t _S3 = (_S2->groupID * Vector<uint32_t, 3> (32U, 1U, 1U) + _S2->groupThreadID).x;
 
+#line 16
     if(_S3 >= (slang_bit_cast<GlobalParams_0*>(globalParams_1))->dataSize_0)
     {
 
+#line 16
         return;
     }
 
@@ -2790,14 +2799,17 @@ void _testMain(void* _S1, void* entryPointParams_0, void* globalParams_1)
     if(_S3 == 0U)
     {
 
+#line 22
         printf("scale = %0.2f\n", (&kernelContext_0)->globalParams_0->PushConstants_0->scale_0);
         printf("offset = %0.2f\n", (&kernelContext_0)->globalParams_0->PushConstants_0->offset_0);
 
         printf("scale2 = %0.2f\n", (&kernelContext_0)->globalParams_0->scale2_0);
         printf("offset2 = %0.2f\n", (&kernelContext_0)->globalParams_0->offset2_0);
 
+#line 21
     }
 
+#line 28
     return;
 }
 

@@ -541,6 +541,18 @@ public:
 	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1)   , rootParameter); }
 	void Dispatch(Pipeline& pipeline, const uint32_t threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1, 1), rootParameter); }
 
+
+	void Dispatch(Pipeline& pipeline, const uint3 threadCount, const DescriptorSets& descriptorSets) {
+		mCommandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline);
+
+		BindDescriptors(*pipeline.Layout(), descriptorSets);
+
+		auto dim = GetDispatchDim(pipeline.GetShader()->WorkgroupSize(), threadCount);
+		mCommandBuffer.dispatch(dim.x, dim.y, dim.z);
+	}
+	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const DescriptorSets& descriptorSets) { Dispatch(pipeline, uint3(threadCount, 1)   , descriptorSets); }
+	void Dispatch(Pipeline& pipeline, const uint32_t threadCount, const DescriptorSets& descriptorSets) { Dispatch(pipeline, uint3(threadCount, 1, 1), descriptorSets); }
+
 	#pragma endregion
 };
 

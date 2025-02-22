@@ -1,6 +1,5 @@
 #include <Core/WindowedApp.hpp>
 #include <Render/SceneRenderer/SceneEditor.hpp>
-#include <Render/Terrain/TerrainRenderer.hpp>
 
 #include <ImGuizmo.h>
 
@@ -8,7 +7,7 @@ using namespace RoseEngine;
 
 int main(int argc, const char** argv) {
 
-	WindowedApp app({
+	WindowedApp app("GLTF Viewer", {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,

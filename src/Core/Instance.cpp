@@ -32,11 +32,11 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBi
 
 	std::string msgstr = pCallbackData->pMessage;
 
-	{ // skip past ' ... | MessageID = ... | '
+	/*{ // skip past ' ... | MessageID = ... | '
 		const size_t offset = msgstr.find_last_of("|");
 		if (offset != std::string::npos)
 			msgstr = msgstr.substr(offset + 2); // skip '| '
-	}
+	}*/
 
 	std::string specstr;
 	{ // Separately print 'The Vulkan spec states: '
