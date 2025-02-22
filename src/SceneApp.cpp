@@ -1,5 +1,5 @@
-#include <Core/WindowedApp.hpp>
-#include <Render/SceneRenderer/SceneEditor.hpp>
+#include <Rose/Core/WindowedApp.hpp>
+#include <Rose/Render/SceneRenderer/SceneEditor.hpp>
 
 #include <ImGuizmo.h>
 

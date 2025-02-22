@@ -9,7 +9,9 @@
 #include "imnodes.h"
 #include "imnodes_internal.h"
 
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
+#endif
 #include <imgui/imgui_internal.h>
 
 // Check minimum ImGui version

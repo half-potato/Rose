@@ -1,6 +1,6 @@
-#include <Core/WindowedApp.hpp>
-#include <Render/SceneRenderer/SceneEditor.hpp>
-#include <Render/Terrain/TerrainRenderer.hpp>
+#include <Rose/Core/WindowedApp.hpp>
+#include <Rose/Render/SceneRenderer/SceneEditor.hpp>
+#include <Rose/Render/Terrain/TerrainRenderer.hpp>
 
 #include <ImGuizmo.h>
 

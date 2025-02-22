@@ -25,10 +25,10 @@ link_libraries(glm)
 
 add_library(RoseLib)
 
-file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.cpp")
-file(GLOB_RECURSE CORE_HPP   "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.hpp")
-file(GLOB_RECURSE CORE_H     "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.h")
-file(GLOB_RECURSE CORE_SLANG "${CMAKE_CURRENT_SOURCE_DIR}/src/*/**.slang")
+file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.cpp")
+file(GLOB_RECURSE CORE_HPP   "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.hpp")
+file(GLOB_RECURSE CORE_H     "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.h")
+file(GLOB_RECURSE CORE_SLANG "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.slang")
 file(GLOB         IMGUI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
 
 target_sources(RoseLib
@@ -51,7 +51,7 @@ target_sources(RoseLib
 target_include_directories(RoseLib
     PUBLIC
         $<INSTALL_INTERFACE:include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )

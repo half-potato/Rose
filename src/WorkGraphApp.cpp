@@ -1,5 +1,5 @@
-#include <Core/WindowedApp.hpp>
-#include <WorkGraph/CommandGraph.hpp>
+#include <Rose/Core/WindowedApp.hpp>
+#include <Rose/WorkGraph/CommandGraph.hpp>
 #include <imnodes.h>
 
 using namespace RoseEngine;
