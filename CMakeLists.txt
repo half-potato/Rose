@@ -2,35 +2,32 @@ cmake_minimum_required(VERSION 3.23)
 
 project(RoseEngine)
 
-set(ROSE_ENABLE_TESTING ON CACHE BOOL ON)
-set(ROSE_BUILD_APPS     ON CACHE BOOL ON)
-
-# Find dependencies
-
-find_package(Vulkan REQUIRED)
-
 # compiler options
 set(CMAKE_CXX_STANDARD 23)
 set(CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+set(ROSE_ENABLE_TESTING ON CACHE BOOL "Build tests")
+set(ROSE_BUILD_APPS     ON CACHE BOOL "Build default applications")
+
+# Find dependencies
+
+find_package(Vulkan REQUIRED)
 
 add_compile_definitions(_USE_MATH_DEFINES GLM_FORCE_XYZW_ONLY IMGUI_DEFINE_MATH_OPERATORS VULKAN_HPP_NO_STRUCT_CONSTRUCTORS)
 
 add_subdirectory(thirdparty/glfw)
 add_subdirectory(thirdparty/glm)
 
-include_directories(thirdparty)
-link_libraries(Vulkan::Vulkan)
-link_libraries(glm)
-
-add_library(RoseLib)
-
+# RoseLib target
 file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.cpp")
 file(GLOB_RECURSE CORE_HPP   "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.hpp")
 file(GLOB_RECURSE CORE_H     "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.h")
 file(GLOB_RECURSE CORE_SLANG "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.slang")
 file(GLOB         IMGUI_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/*.cpp")
 
+add_library(RoseLib)
+set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
 target_sources(RoseLib
 	PUBLIC
 		${CORE_SRCS}
@@ -54,20 +51,24 @@ target_include_directories(RoseLib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
 )
 
-set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(RoseLib Vulkan::Vulkan)
+target_link_libraries(RoseLib glm)
 
 target_link_libraries(RoseLib glfw $ENV{VULKAN_SDK}/Lib/slang.lib)
 target_include_directories(RoseLib PRIVATE thirdparty/glfw/include thirdparty/glfw/deps)
 
 if(UNIX)
     target_link_libraries(RoseLib pthread ${CMAKE_DL_LIBS} xcb xcb-keysyms)
-    add_compile_definitions(VK_USE_PLATFORM_XCB_KHR _GLFW_X11)
+    target_compile_definitions(RoseLib PUBLIC VK_USE_PLATFORM_XCB_KHR _GLFW_X11)
 elseif(WIN32)
-    add_compile_definitions(VK_USE_PLATFORM_WIN32_KHR _GLFW_WIN32 WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS NOMINMAX)
-    add_compile_options(/bigobj /MP)
+    target_compile_definitions(RoseLib PUBLIC VK_USE_PLATFORM_WIN32_KHR _GLFW_WIN32 WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS NOMINMAX)
+    target_compile_options(RoseLib PUBLIC /bigobj /MP)
 endif()
+
+# Optional dependencies
 
 find_package(assimp CONFIG)
 if (assimp_FOUND)
@@ -87,6 +88,8 @@ if (OpenVDB_FOUND)
     message(STATUS "OpenVDB enabled")
 endif()
 
+# Test and app targets
+
 if (ROSE_BUILD_APPS)
 	add_executable(SceneApp src/SceneApp.cpp)
 	target_link_libraries(SceneApp PRIVATE RoseLib)
@@ -99,6 +102,8 @@ if (ROSE_ENABLE_TESTING)
 	enable_testing()
 	add_subdirectory(tests)
 endif()
+
+# misc
 
 configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
 
