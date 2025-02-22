@@ -20,7 +20,6 @@ add_subdirectory(thirdparty/glfw)
 add_subdirectory(thirdparty/glm)
 
 include_directories(thirdparty)
-include_directories(src)
 link_libraries(Vulkan::Vulkan)
 link_libraries(glm)
 
@@ -47,6 +46,14 @@ target_sources(RoseLib
 		${CORE_HPP}
 		${CORE_H}
 		${CORE_SLANG}
+)
+
+target_include_directories(RoseLib
+    PUBLIC
+        $<INSTALL_INTERFACE:include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 set_target_properties(RoseLib PROPERTIES LINKER_LANGUAGE CXX)
