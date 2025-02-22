@@ -1,5 +1,7 @@
 #pragma once
 
+#include <imgui/imgui.h>
+
 #include "Pipeline.hpp"
 #include "Hash.hpp"
 
