@@ -28,6 +28,7 @@ public:
 
 	inline PipelineCache(std::filesystem::path path, const std::string& entry = "main", PipelineLayoutInfo layoutInfo_ = {}) {
 		stages = { ShaderEntryPoint{ path, entry } };
+		cachedShaders.resize(1);
 		layoutInfo = layoutInfo_;
 	}
 
@@ -35,6 +36,7 @@ public:
 	inline PipelineCache(const std::vector<ShaderEntryPoint>& stages_, PipelineLayoutInfo layoutInfo_ = {}) {
 		stages = stages_;
 		layoutInfo = layoutInfo_;
+		cachedShaders.resize(stages.size());
 	}
 
 	PipelineCache() = default;
@@ -45,7 +47,7 @@ public:
 
 	inline operator bool() const { return !stages.empty(); }
 
-	inline void clear() { cached.clear(); }
+	inline void clear() { cachedPipelines.clear(); cachedShaders.clear(); }
 
 	inline const PipelineLayoutInfo& GetLayoutInfo() const {
 		return layoutInfo;
@@ -55,10 +57,27 @@ public:
 		clear();
 	}
 
+
+	inline ref<ShaderModule> getShader(Device& device, const uint32_t index, const ShaderDefines& defines = {}) {
+		if (auto it = cachedShaders[index].find(defines); it != cachedShaders[index].end()) {
+			// shader hot reload
+			if (ImGui::IsKeyPressed(ImGuiKey_F5, false) && it->second->IsStale()) {
+				cachedShaders[index].erase(it);
+			} else {
+				return it->second;
+			}
+		}
+
+		auto shader = ShaderModule::Create(device, stages[index].path, stages[index].entry, "sm_6_7", defines);
+		cachedShaders[index].emplace(defines, shader);
+		return shader;
+	}
+
+
 	inline ref<Pipeline> get(Device& device, const ShaderDefines& defines = {}, const PipelineInfo& pipelineInfo = ComputePipelineInfo{}) {
 		CacheKey key = { defines, pipelineInfo };
 
-		if (auto it = cached.find(key); it != cached.end()) {
+		if (auto it = cachedPipelines.find(key); it != cachedPipelines.end()) {
 			// shader hot reload
 			bool stale = false;
 			if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
@@ -71,7 +90,7 @@ public:
 			}
 			if (stale) {
 				device.Wait();
-				cached.erase(it);
+				cachedPipelines.erase(it);
 			} else
 				return it->second; // pipeline in cache
 		}
@@ -80,7 +99,7 @@ public:
 
 		ref<ShaderModule> computeShader, vertexShader, fragmentShader;
 		for (uint32_t i = 0; i < stages.size(); i++) {
-			auto shader = ShaderModule::Create(device, stages[i].path, stages[i].entry, "sm_6_7", defines);
+			ref<ShaderModule> shader = getShader(device, i, defines);
 			switch (shader->Stage()) {
 			case vk::ShaderStageFlagBits::eCompute:
 				computeShader = shader;
@@ -101,13 +120,14 @@ public:
 			p = Pipeline::CreateGraphics(device, vertexShader, fragmentShader, std::get<GraphicsPipelineInfo>(pipelineInfo), layoutInfo);
 		}
 
-		cached.emplace(key, p);
+		cachedPipelines.emplace(key, p);
 
 		return p;
 	}
 
 private:
-	std::unordered_map<CacheKey, ref<Pipeline>, CacheKeyHasher> cached;
+	std::unordered_map<CacheKey, ref<Pipeline>, CacheKeyHasher> cachedPipelines;
+	std::vector<std::unordered_map<ShaderDefines, ref<ShaderModule>>> cachedShaders;
 	std::vector<ShaderEntryPoint> stages;
 	PipelineLayoutInfo layoutInfo;
 };
