@@ -14,7 +14,12 @@ set(ROSE_BUILD_APPS     ON CACHE BOOL "Build default applications")
 
 find_package(Vulkan REQUIRED)
 
-add_compile_definitions(_USE_MATH_DEFINES GLM_FORCE_XYZW_ONLY IMGUI_DEFINE_MATH_OPERATORS VULKAN_HPP_NO_STRUCT_CONSTRUCTORS)
+add_compile_definitions(
+	_USE_MATH_DEFINES
+	GLM_FORCE_XYZW_ONLY
+	IMGUI_DEFINE_MATH_OPERATORS
+	VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+)
 
 add_subdirectory(thirdparty/glfw)
 add_subdirectory(thirdparty/glm)
@@ -54,17 +59,27 @@ target_include_directories(RoseLib
         ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
 )
 
-target_link_libraries(RoseLib Vulkan::Vulkan)
-target_link_libraries(RoseLib glm)
+target_link_directories(RoseLib PUBLIC $ENV{VULKAN_SDK}/Lib)
 
-target_link_libraries(RoseLib glfw $ENV{VULKAN_SDK}/Lib/slang.lib)
+target_link_libraries(RoseLib Vulkan::Vulkan)
+target_link_libraries(RoseLib glm glfw slang)
+
 target_include_directories(RoseLib PRIVATE thirdparty/glfw/include thirdparty/glfw/deps)
 
 if(UNIX)
     target_link_libraries(RoseLib pthread ${CMAKE_DL_LIBS} xcb xcb-keysyms)
-    target_compile_definitions(RoseLib PUBLIC VK_USE_PLATFORM_XCB_KHR _GLFW_X11)
+    target_compile_definitions(RoseLib PUBLIC
+		VK_USE_PLATFORM_XCB_KHR
+		_GLFW_X11
+	)
 elseif(WIN32)
-    target_compile_definitions(RoseLib PUBLIC VK_USE_PLATFORM_WIN32_KHR _GLFW_WIN32 WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS NOMINMAX)
+    target_compile_definitions(RoseLib PUBLIC
+		VK_USE_PLATFORM_WIN32_KHR
+		_GLFW_WIN32
+		WIN32_LEAN_AND_MEAN
+		_CRT_SECURE_NO_WARNINGS
+		NOMINMAX
+	)
     target_compile_options(RoseLib PUBLIC /bigobj /MP)
 endif()
 

@@ -159,7 +159,7 @@ public:
 				bool ready = true;
 
 				for (const WorkNodeAttribute& attribute : GetAttributes(v)) {
-					if ((attribute.flags & WorkAttributeFlags::eInput) == 0)
+					if ((attribute.flags & WorkAttributeFlagBits::eInput) == 0)
 						continue;
 
 					const WorkAttributePointer& dst{nodeId, attribute.name};
@@ -185,7 +185,7 @@ public:
 						todo.push(srcNodeId);
 						ready = false;
 					} else {
-						if ((attribute.flags & WorkAttributeFlags::eOptional) == 0) {
+						if ((attribute.flags & WorkAttributeFlagBits::eOptional) == 0) {
 							throw std::runtime_error("Error: Non-optional input attribute \"" + attribute.name + "\" in node " + nodeId + " is disconnected.");
 						}
 					}

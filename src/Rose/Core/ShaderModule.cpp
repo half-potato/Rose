@@ -149,7 +149,7 @@ struct ParameterEnumerator {
 		return false;
 	}
 
-	void EnumerateAccessPaths(slang::VariableLayoutReflection* parameter, ShaderParameterBinding& binding, ParameterAccessPath accessPath = {}) {
+	void EnumerateAccessPaths(slang::VariableLayoutReflection* parameter, ShaderParameterBinding& binding, ParameterAccessPath accessPath) {
 		// create access path node for parameter
 		accessPath.varLayout = parameter;
 		accessPath.outer = accessPath.leafNode;
@@ -429,7 +429,10 @@ ref<ShaderModule> ShaderModule::Create(
 		shader->mRootBinding = ShaderParameterBinding{};
 
 		ParameterEnumerator e;
-		e.EnumerateAccessPaths(shaderReflection->getGlobalParamsVarLayout(), shader->mRootBinding);
+		{
+			ParameterEnumerator::ParameterAccessPath accessPath = {};
+			e.EnumerateAccessPaths(shaderReflection->getGlobalParamsVarLayout(), shader->mRootBinding, accessPath);
+		}
 
 		for (uint32_t i = 0; i < entryPointReflection->getParameterCount(); i++) {
 			slang::VariableLayoutReflection* varLayout = entryPointReflection->getParameterByIndex(i);

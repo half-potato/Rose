@@ -26,7 +26,11 @@ namespace RoseEngine {
 #define BOLDWHITE   "\033[1m\033[37m"
 
 // Debug messenger functions
-VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity_, VkDebugUtilsMessageTypeFlagsEXT messageType_, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(
+	vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity_,
+	vk::Flags<vk::DebugUtilsMessageTypeFlagBitsEXT> messageType_,
+	const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+	void* pUserData) {
 	vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity = (vk::DebugUtilsMessageSeverityFlagBitsEXT)messageSeverity_;
 	vk::DebugUtilsMessageTypeFlagsEXT messageType = (vk::DebugUtilsMessageTypeFlagsEXT)messageType_;
 

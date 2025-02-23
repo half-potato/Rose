@@ -45,30 +45,30 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	if (device.EnabledExtensions().contains(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME))
 		std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(createInfo).shaderBufferFloat32AtomicAdd = true;
 	else
-		createInfo.unlink<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>();
+		createInfo.template unlink<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>();
 
 	if (accelerationStructure)
 		std::get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(createInfo).accelerationStructure = accelerationStructure;
 	else
-		createInfo.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+		createInfo.template unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
 
 	if (device.EnabledExtensions().contains(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
 		auto& rtfeatures = std::get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(createInfo);
 		rtfeatures.rayTracingPipeline = true;
 		rtfeatures.rayTraversalPrimitiveCulling = rtfeatures.rayTracingPipeline;
 	} else {
-		createInfo.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+		createInfo.template unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
 	}
 
 	if (device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME))
 		std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(createInfo).rayQuery = device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 	else
-		createInfo.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+		createInfo.template unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
 
 	if (device.EnabledExtensions().contains(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME))
 		std::get<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>(createInfo).fragmentShaderBarycentric = true;
 	else
-		createInfo.unlink<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>();
+		createInfo.template unlink<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>();
 }
 
 ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const vk::ArrayProxy<const std::string>& deviceExtensions) {

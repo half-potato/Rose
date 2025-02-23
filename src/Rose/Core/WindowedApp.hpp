@@ -78,7 +78,7 @@ struct WindowedApp {
 				if (memoryBudgetExt) {
 					const auto[usage, usageUnit]   = FormatBytes(budgetProperties.heapUsage[heapIndex]);
 					const auto[budget, budgetUnit] = FormatBytes(budgetProperties.heapBudget[heapIndex]);
-					ImGui::Text("Heap %u%s (%llu %s / %llu %s)", heapIndex, isDeviceLocalStr, usage, usageUnit, budget, budgetUnit);
+					ImGui::Text("Heap %u%s (%lu %s / %lu %s)", heapIndex, isDeviceLocalStr, usage, usageUnit, budget, budgetUnit);
 				} else
 					ImGui::Text("Heap %u%s", heapIndex, isDeviceLocalStr);
 				ImGui::Indent();
@@ -87,13 +87,13 @@ struct WindowedApp {
 				{
 					const auto[usage, usageUnit]   = FormatBytes(budgets[heapIndex].usage);
 					const auto[budget, budgetUnit] = FormatBytes(budgets[heapIndex].budget);
-					ImGui::Text("%llu %s used, %llu %s budgeted", usage, usageUnit, budget, budgetUnit);
+					ImGui::Text("%lu %s used, %lu %s budgeted", usage, usageUnit, budget, budgetUnit);
 
 					const auto[allocationBytes, allocationBytesUnit] = FormatBytes(budgets[heapIndex].statistics.allocationBytes);
-					ImGui::Text("%u allocations\t(%llu %s)", budgets[heapIndex].statistics.allocationCount, allocationBytes, allocationBytesUnit);
+					ImGui::Text("%u allocations\t(%lu %s)", budgets[heapIndex].statistics.allocationCount, allocationBytes, allocationBytesUnit);
 
 					const auto[blockBytes, blockBytesUnit] = FormatBytes(budgets[heapIndex].statistics.blockBytes);
-					ImGui::Text("%u memory blocks\t(%llu %s)", budgets[heapIndex].statistics.blockCount, blockBytes, blockBytesUnit);
+					ImGui::Text("%u memory blocks\t(%lu %s)", budgets[heapIndex].statistics.blockCount, blockBytes, blockBytesUnit);
 				}
 
 				ImGui::Unindent();

@@ -117,7 +117,7 @@ inline void DrawNode(CommandContext& context, ComputeProgramNode& node) {
 			if (auto r = pfd::open_file("Choose shader", kSrcFolder.string(), {
 				//"All files (.*)", "*.*",
 				"Shader files (.slang .hlsl .glsl .vert .frag .geom .tesc .tese .comp)", "*.slang *.hlsl *.glsl *.vert *.frag *.geom *.tesc *.tese *.comp",
-			}, false).result(); !r.empty()) {
+			}).result(); !r.empty()) {
 				node.shaderPath = *r.begin();
 				if (std::filesystem::path(node.shaderPath).generic_string().starts_with(kSrcFolder.generic_string()))
 					node.shaderPath = std::filesystem::relative(node.shaderPath, kSrcFolder).string();
