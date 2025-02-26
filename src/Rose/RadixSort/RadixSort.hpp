@@ -97,11 +97,6 @@ public:
 			.access = vk::AccessFlagBits2::eShaderRead|vk::AccessFlagBits2::eShaderWrite,
 			.queueFamily = context.QueueFamily()
 		}));
-		context.AddBarrier(keys_tmp.SetState(Buffer::ResourceState{
-			.stage = vk::PipelineStageFlagBits2::eComputeShader,
-			.access = vk::AccessFlagBits2::eShaderRead|vk::AccessFlagBits2::eShaderWrite,
-			.queueFamily = context.QueueFamily()
-		}));
 	}
 };
 

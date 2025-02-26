@@ -6,25 +6,26 @@
 
 #include "Instance.hpp"
 
+#include <functional>
+
 namespace RoseEngine {
+
 
 void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, auto& createInfo) {
 	features.fillModeNonSolid = true;
 	features.samplerAnisotropy = true;
-	features.shaderImageGatherExtended = true;
+	//features.shaderImageGatherExtended = true;
 	features.shaderStorageImageExtendedFormats = true;
 	features.wideLines = true;
 	features.largePoints = true;
 	features.sampleRateShading = true;
-	features.shaderInt16 = true;
+	//features.shaderInt16 = true;
 	features.shaderFloat64 = true;
-	features.geometryShader = true;
-	features.shaderStorageBufferArrayDynamicIndexing = true;
-	features.shaderSampledImageArrayDynamicIndexing = true;
-	features.shaderStorageImageArrayDynamicIndexing = true;
-	features.fragmentStoresAndAtomics = true;
-
-	const bool accelerationStructure = device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+	//features.geometryShader = true;
+	//features.shaderStorageBufferArrayDynamicIndexing = true;
+	//features.shaderSampledImageArrayDynamicIndexing = true;
+	//features.shaderStorageImageArrayDynamicIndexing = true;
+	//features.fragmentStoresAndAtomics = true;
 
 	vk::PhysicalDeviceVulkan12Features& vk12features = std::get<vk::PhysicalDeviceVulkan12Features>(createInfo);
 	vk12features.shaderStorageBufferArrayNonUniformIndexing = true;
@@ -32,7 +33,7 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	vk12features.shaderStorageImageArrayNonUniformIndexing = true;
 	vk12features.descriptorBindingPartiallyBound = true;
 	vk12features.shaderFloat16 = true;
-	vk12features.bufferDeviceAddress = accelerationStructure || device.EnabledExtensions().contains(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+	vk12features.bufferDeviceAddress = device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) || device.EnabledExtensions().contains(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
 	vk12features.timelineSemaphore = true;
 
 	vk::PhysicalDeviceVulkan13Features& vk13features = std::get<vk::PhysicalDeviceVulkan13Features>(createInfo);
@@ -42,33 +43,39 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	vk::PhysicalDevice16BitStorageFeatures& storageFeatures = std::get<vk::PhysicalDevice16BitStorageFeatures>(createInfo);
 	storageFeatures.storageBuffer16BitAccess = true;
 
-	if (device.EnabledExtensions().contains(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME))
-		std::get<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(createInfo).shaderBufferFloat32AtomicAdd = true;
-	else
-		createInfo.template unlink<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>();
+	// optional extensions
 
-	if (accelerationStructure)
-		std::get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(createInfo).accelerationStructure = accelerationStructure;
-	else
-		createInfo.template unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+	auto configureExtension = [&]<typename FeatureStruct>(const char* extensionName, auto&& fn) {
+		if (device.EnabledExtensions().contains(extensionName))
+			fn( std::get<FeatureStruct>(createInfo) );
+		else
+			createInfo.template unlink<FeatureStruct>();
+	};
 
-	if (device.EnabledExtensions().contains(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
-		auto& rtfeatures = std::get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(createInfo);
-		rtfeatures.rayTracingPipeline = true;
-		rtfeatures.rayTraversalPrimitiveCulling = rtfeatures.rayTracingPipeline;
-	} else {
-		createInfo.template unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
-	}
+	configureExtension.operator()<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME, [](vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT& v) {
+		v.shaderBufferFloat32AtomicAdd = true;
+	});
 
-	if (device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME))
-		std::get<vk::PhysicalDeviceRayQueryFeaturesKHR>(createInfo).rayQuery = device.EnabledExtensions().contains(VK_KHR_RAY_QUERY_EXTENSION_NAME);
-	else
-		createInfo.template unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+	configureExtension.operator()<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, [](vk::PhysicalDeviceAccelerationStructureFeaturesKHR& v) {
+		v.accelerationStructure = true;
+	});
 
-	if (device.EnabledExtensions().contains(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME))
-		std::get<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>(createInfo).fragmentShaderBarycentric = true;
-	else
-		createInfo.template unlink<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>();
+	configureExtension.operator()<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, [](vk::PhysicalDeviceRayTracingPipelineFeaturesKHR& v) {
+		v.rayTracingPipeline = true;
+		v.rayTraversalPrimitiveCulling = true;
+	});
+
+	configureExtension.operator()<vk::PhysicalDeviceRayQueryFeaturesKHR>(VK_KHR_RAY_QUERY_EXTENSION_NAME, [](vk::PhysicalDeviceRayQueryFeaturesKHR& v) {
+		v.rayQuery = true;
+	});
+
+	configureExtension.operator()<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, [](vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR& v) {
+		v.fragmentShaderBarycentric = true;
+	});
+
+	configureExtension.operator()<vk::PhysicalDeviceFragmentShaderInterlockFeaturesEXT>(VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME, [](vk::PhysicalDeviceFragmentShaderInterlockFeaturesEXT& v) {
+		v.fragmentShaderPixelInterlock = true;
+	});
 }
 
 ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const vk::ArrayProxy<const std::string>& deviceExtensions) {

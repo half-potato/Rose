@@ -32,7 +32,8 @@ private:
 		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
 		vk::PhysicalDeviceRayQueryFeaturesKHR,
-		vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR
+		vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR,
+		vk::PhysicalDeviceFragmentShaderInterlockFeaturesEXT
 		> mCreateInfo = {};
 	vk::PhysicalDeviceLimits mLimits = {};
 	vk::PhysicalDeviceAccelerationStructurePropertiesKHR mAccelerationStructureProperties = {};
