@@ -22,10 +22,17 @@ struct WindowedApp {
 	uint32_t presentQueueFamily = 0;
 	bool alwaysSync = false;
 
+	enum WidgetFlagBits {
+		eNone      = 0,
+		eNoBorders = 1,
+	};
+	using WidgetFlags = vk::Flags<WidgetFlagBits>;
+
 	struct Widget {
 		std::function<void()> draw;
-		bool visible = true;
-		ImGuiWindowFlags flags = (ImGuiWindowFlags)0;
+		bool                  visible = false;
+		WidgetFlags           flags = WidgetFlagBits::eNone;
+		ImGuiWindowFlags      windowFlags = (ImGuiWindowFlags)0;
 	};
 	std::unordered_map<std::string, Widget> widgets = {};
 	std::unordered_map<std::string, std::vector<std::function<void()>>> menuItems = {};
@@ -98,7 +105,7 @@ struct WindowedApp {
 
 				ImGui::Unindent();
 			}
-		});
+		}, false);
 
 		AddWidget("Window", [&]() {
 			{
@@ -147,11 +154,7 @@ struct WindowedApp {
 				}
 				ImGui::EndCombo();
 			}
-		});
-
-		AddWidget("Dear ImGui Demo", [&]() {
-			ImGui::ShowDemoWindow(&widgets["Dear ImGui Demo"].visible);
-		});
+		}, false);
 
 		AddMenuItem("Edit", [&]() {
 			ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0,0,0,0));
@@ -166,8 +169,8 @@ struct WindowedApp {
 		Gui::Destroy();
 	}
 
-	inline void AddWidget(const std::string& name, auto fn, const bool initialState = false, const ImGuiWindowFlags flags = (ImGuiWindowFlags)0) {
-		widgets[name] = Widget{fn, initialState, flags};
+	inline void AddWidget(const std::string& name, auto fn, const bool startOpen = true, const WidgetFlagBits flags = WidgetFlagBits::eNone, const ImGuiWindowFlags windowFlags = (ImGuiWindowFlags)0) {
+		widgets[name] = Widget{fn, startOpen, flags, windowFlags};
 	}
 
 	inline void AddMenuItem(const std::string& name, auto fn) {
@@ -191,9 +194,12 @@ struct WindowedApp {
 
 	inline void Update() {
 		// window dockspace
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.f);
 		ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
 		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize), ImGuiCond_Always;
 		ImGui::Begin("Main Dockspace", nullptr, ImGuiWindowFlags_NoDocking|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoBringToFrontOnFocus|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_MenuBar);
+		ImGui::PopStyleVar(2);
 
 		// Menu bar
 		if (ImGui::BeginMenuBar()) {
@@ -247,8 +253,18 @@ struct WindowedApp {
 
 		for (auto&[name, widget] : widgets) {
 			if (widget.visible) {
-				if (ImGui::Begin(name.c_str(), &widget.visible, widget.flags))
-					widget.draw();
+				bool noBorder = (bool)(widget.flags & WidgetFlagBits::eNoBorders);
+				if (noBorder) {
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
+					ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.f);
+				}
+
+				bool visible = ImGui::Begin(name.c_str(), &widget.visible, widget.windowFlags);
+
+				if (noBorder) ImGui::PopStyleVar(2);
+
+				if (visible) widget.draw();
+
 				ImGui::End();
 			}
 		}
