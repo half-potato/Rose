@@ -209,7 +209,7 @@ public:
 			.access = vk::AccessFlagBits2::eTransferWrite,
 			.queueFamily = mQueueFamily });
 		ExecuteBarriers();
-		mCommandBuffer.fillBuffer(**buffer.mBuffer, offset, std::min(size, buffer.size_bytes()), std::bit_cast<uint32_t>(data));
+		mCommandBuffer.fillBuffer(**buffer.mBuffer, buffer.mOffset + offset, std::min(size, buffer.size_bytes()), std::bit_cast<uint32_t>(data));
 	}
 
 	template<typename Tx, typename Ty>

@@ -1,0 +1,1 @@
+AddTest(PrefixSum PrefixSum.cpp)
