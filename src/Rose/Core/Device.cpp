@@ -25,7 +25,7 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	//features.shaderStorageBufferArrayDynamicIndexing = true;
 	//features.shaderSampledImageArrayDynamicIndexing = true;
 	//features.shaderStorageImageArrayDynamicIndexing = true;
-	features.fragmentStoresAndAtomics = true;
+	//features.fragmentStoresAndAtomics = true;
 
 	vk::PhysicalDeviceVulkan12Features& vk12features = std::get<vk::PhysicalDeviceVulkan12Features>(createInfo);
 	vk12features.shaderStorageBufferArrayNonUniformIndexing = true;
