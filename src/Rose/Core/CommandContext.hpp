@@ -53,22 +53,29 @@ public:
 		return *this;
 	}
 };
+
 using BufferParameter = BufferView;
+
+using TexelBufferParameter = TexelBufferView;
+
 struct ImageParameter {
 	ImageView              image = {};
 	vk::ImageLayout        imageLayout = {};
 	ref<vk::raii::Sampler> sampler = {};
 };
+
 using AccelerationStructureParameter = ref<vk::raii::AccelerationStructureKHR>;
+
 using ShaderParameter = ParameterMap<
 	std::monostate,
 	ConstantParameter,
 	BufferParameter,
+	TexelBufferParameter,
 	ImageParameter,
 	AccelerationStructureParameter >;
 
 template<typename T>
-concept shader_parameter = one_of<T, ShaderParameter, ConstantParameter, BufferParameter, ImageParameter, AccelerationStructureParameter>;
+concept shader_parameter = one_of<T, ShaderParameter, ConstantParameter, BufferParameter, TexelBufferParameter, ImageParameter, AccelerationStructureParameter>;
 
 using DescriptorSets = std::vector<vk::raii::DescriptorSet>;
 

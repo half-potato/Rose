@@ -164,4 +164,25 @@ inline BufferRange<std::ranges::range_value_t<R>> Buffer::Create(
 	return buf;
 }
 
+
+class TexelBufferView {
+private:
+	ref<vk::raii::BufferView> mBufferView = nullptr;
+	BufferView mBuffer = {};
+	vk::Format mFormat = vk::Format::eUndefined;
+
+public:
+	static TexelBufferView Create(const Device& device, const BufferView& buffer, vk::Format format);
+
+	inline operator bool() const { return mBufferView != nullptr; }
+
+	inline       vk::raii::BufferView& operator*()        { return *mBufferView; }
+	inline const vk::raii::BufferView& operator*() const  { return *mBufferView; }
+	inline       vk::raii::BufferView* operator->()       { return mBufferView.get(); }
+	inline const vk::raii::BufferView* operator->() const { return mBufferView.get(); }
+
+	inline BufferView GetBuffer() const { return mBuffer; }
+	inline vk::Format Format() const { return mFormat; }
+};
+
 }

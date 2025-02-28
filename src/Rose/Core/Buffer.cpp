@@ -75,4 +75,17 @@ BufferView Buffer::Create(
 	return { buf, 0, size };
 }
 
+TexelBufferView TexelBufferView::Create(const Device& device, const BufferView& buffer, vk::Format format) {
+	TexelBufferView b;
+	b.mBufferView = make_ref<vk::raii::BufferView>(device->createBufferView(vk::BufferViewCreateInfo{
+		.buffer = **buffer.mBuffer,
+		.format = format,
+		.offset = buffer.mOffset,
+		.range  = buffer.size_bytes(),
+	}));
+	b.mBuffer = buffer;
+	b.mFormat = format;
+	return b;
+}
+
 }

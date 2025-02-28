@@ -170,7 +170,8 @@ uint32_t align16(uint32_t s) {
 struct DescriptorSetWriter {
 	union DescriptorInfo {
 		vk::DescriptorBufferInfo buffer;
-		vk::DescriptorImageInfo image;
+		vk::DescriptorImageInfo  image;
+		vk::BufferView           texelBuffer;
 		vk::WriteDescriptorSetAccelerationStructureKHR accelerationStructure;
 	};
 	std::vector<DescriptorInfo> descriptorInfos;
@@ -197,6 +198,12 @@ struct DescriptorSetWriter {
 		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
 		info.buffer = data;
 		w.setBufferInfo(info.buffer);
+	}
+	void WriteTexelBuffer(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, uint32_t bindingOffset, const TexelBufferView& data) {
+		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex, bindingOffset));
+		DescriptorInfo& info = descriptorInfos.emplace_back(DescriptorInfo{});
+		info.texelBuffer = *data;
+		w.setTexelBufferView(info.texelBuffer);
 	}
 	void WriteImage(const ShaderDescriptorBinding& binding, uint32_t arrayIndex, uint32_t bindingOffset, const vk::DescriptorImageInfo& data) {
 		vk::WriteDescriptorSet& w = writes.emplace_back(WriteDescriptor(binding, arrayIndex, bindingOffset));
@@ -300,6 +307,14 @@ struct DescriptorSetWriter {
 							.buffer = **buffer.mBuffer,
 							.offset = buffer.mOffset,
 							.range  = buffer.size() });
+					} else if (const auto* v = param.get_if<TexelBufferParameter>()) {
+						const auto& buffer = *v;
+						if (buffer.GetBuffer().empty()) continue;
+						context.AddBarrier(v->GetBuffer(), Buffer::ResourceState{
+							.stage  = stage,
+							.access = descriptorBinding->writable ? vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eShaderRead,
+							.queueFamily = context.QueueFamily() });
+						WriteTexelBuffer(*descriptorBinding, arrayIndex, bindingOffset, buffer);
 					} else if (const auto* v = param.get_if<ImageParameter>()) {
 						const auto& [image, layout, sampler] = *v;
 						if (!image && !sampler) continue;
