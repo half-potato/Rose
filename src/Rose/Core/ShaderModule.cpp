@@ -1,7 +1,7 @@
 #include "ShaderModule.hpp"
 #include "Hash.hpp"
 
-#include <slang/slang.h>
+#include <slang.h>
 #include <portable-file-dialogs.h>
 
 #include <stdio.h>
@@ -92,20 +92,20 @@ inline const char* to_string(slang::ParameterCategory category) {
 	};
 };
 
+struct ParameterAccessPath {
+	static const size_t kInvalidAccessPath = ~size_t(0);
+
+	slang::VariableLayoutReflection* varLayout = nullptr;
+	size_t leafNode = kInvalidAccessPath;
+	size_t outer = kInvalidAccessPath;
+
+	size_t deepestConstantBuffer = kInvalidAccessPath;
+	size_t deepestParameterBlock = kInvalidAccessPath;
+	size_t depth = 0;
+	bool pushConstant = false;
+};
 
 struct ParameterEnumerator {
-	struct ParameterAccessPath {
-		static const size_t kInvalidAccessPath = ~size_t(0);
-
-		slang::VariableLayoutReflection* varLayout = nullptr;
-		size_t leafNode = kInvalidAccessPath;
-		size_t outer = kInvalidAccessPath;
-
-		size_t deepestConstantBuffer = kInvalidAccessPath;
-		size_t deepestParameterBlock = kInvalidAccessPath;
-		size_t depth = 0;
-		bool pushConstant = false;
-	};
 
 	std::vector<ParameterAccessPath> nodes;
 
@@ -430,13 +430,13 @@ ref<ShaderModule> ShaderModule::Create(
 
 		ParameterEnumerator e;
 		{
-			ParameterEnumerator::ParameterAccessPath accessPath = {};
+			ParameterAccessPath accessPath = {};
 			e.EnumerateAccessPaths(shaderReflection->getGlobalParamsVarLayout(), shader->mRootBinding, accessPath);
 		}
 
 		for (uint32_t i = 0; i < entryPointReflection->getParameterCount(); i++) {
 			slang::VariableLayoutReflection* varLayout = entryPointReflection->getParameterByIndex(i);
-			ParameterEnumerator::ParameterAccessPath accessPath = {};
+			ParameterAccessPath accessPath = {};
 			if (varLayout->getCategory() == slang::ParameterCategory::Uniform)
 				accessPath.pushConstant = true;
 			e.EnumerateAccessPaths(varLayout, shader->mRootBinding[varLayout->getName()], accessPath);
