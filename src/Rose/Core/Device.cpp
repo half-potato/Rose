@@ -73,8 +73,10 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 		v.fragmentShaderBarycentric = true;
 	});
 
-	configureExtension.operator()<vk::PhysicalDeviceFragmentShaderInterlockFeaturesEXT>(VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME, [](vk::PhysicalDeviceFragmentShaderInterlockFeaturesEXT& v) {
-		v.fragmentShaderPixelInterlock = true;
+	configureExtension.operator()<vk::PhysicalDeviceMeshShaderFeaturesEXT>(VK_EXT_MESH_SHADER_EXTENSION_NAME, [](vk::PhysicalDeviceMeshShaderFeaturesEXT& v){
+		v.meshShader = true;
+		v.meshShaderQueries = true;
+		v.taskShader = true;
 	});
 }
 

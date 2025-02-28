@@ -416,11 +416,12 @@ ref<ShaderModule> ShaderModule::Create(
 			case SLANG_STAGE_CLOSEST_HIT:    shader->mStage = vk::ShaderStageFlagBits::eClosestHitKHR; break;
 			case SLANG_STAGE_MISS:           shader->mStage = vk::ShaderStageFlagBits::eMissKHR; break;
 			case SLANG_STAGE_CALLABLE:       shader->mStage = vk::ShaderStageFlagBits::eCallableKHR; break;
-			case SLANG_STAGE_MESH:           shader->mStage = vk::ShaderStageFlagBits::eMeshNV; break;
+			case SLANG_STAGE_MESH:           shader->mStage = vk::ShaderStageFlagBits::eMeshEXT; break;
+			case SLANG_STAGE_AMPLIFICATION:  shader->mStage = vk::ShaderStageFlagBits::eTaskEXT; break;
 			default: throw std::runtime_error("Unsupported shader stage");
 		};
 
-		if (shader->mStage == vk::ShaderStageFlagBits::eCompute) {
+		/*if (shader->mStage == vk::ShaderStageFlagBits::eCompute)*/ {
 			SlangUInt sz[3];
 			entryPointReflection->getComputeThreadGroupSize(3, &sz[0]);
 			shader->mWorkgroupSize = uint3( (uint32_t)sz[0], (uint32_t)sz[1], (uint32_t)sz[2] );

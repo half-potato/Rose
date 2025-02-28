@@ -256,21 +256,26 @@ ref<Pipeline> Pipeline::CreateCompute(const Device& device, const ref<const Shad
 }
 
 
-ref<Pipeline> Pipeline::CreateGraphics(const Device& device, const ref<const ShaderModule>& vertexShader, const ref<const ShaderModule>& fragmentShader, const GraphicsPipelineInfo& info, const PipelineLayoutInfo& layoutInfo, const DescriptorSetLayouts& descriptorSetLayouts) {
+ref<Pipeline> Pipeline::CreateGraphics(const Device& device, const vk::ArrayProxy<const ref<const ShaderModule>>& shaders, const GraphicsPipelineInfo& info, const PipelineLayoutInfo& layoutInfo, const DescriptorSetLayouts& descriptorSetLayouts) {
 	// Pipeline constructor creates mLayout, mDescriptorSetLayouts, and mDescriptorMap
 
 	// create pipeline
 	ref<Pipeline> pipeline = make_ref<Pipeline>();
-	pipeline->mLayout = PipelineLayout::Create(device, { vertexShader, fragmentShader }, layoutInfo, descriptorSetLayouts);
-	pipeline->mShaders = { vertexShader, fragmentShader };
+	pipeline->mLayout = PipelineLayout::Create(device, shaders, layoutInfo, descriptorSetLayouts);
+	pipeline->mShaders.resize(shaders.size());
+	std::ranges::copy(shaders, pipeline->mShaders.begin());
+
+	std::string name;
 
 	std::vector<vk::PipelineShaderStageCreateInfo> stages;
-	for (const auto& shader : { vertexShader, fragmentShader })
+	for (const auto& shader : shaders) {
+		name += shader->SourceFiles()[0].stem().string() + ":" + shader->EntryPointName();
 		stages.emplace_back(vk::PipelineShaderStageCreateInfo{
 			.flags = info.stageFlags,
 			.stage = shader->Stage(),
 			.module = ***shader,
 			.pName = "main" });
+		}
 
 	vk::PipelineRenderingCreateInfo dynamicRenderingState = {};
 	if (info.dynamicRenderingState) {
@@ -320,7 +325,7 @@ ref<Pipeline> Pipeline::CreateGraphics(const Device& device, const ref<const Sha
 		.subpass             = info.subpassIndex };
 	createInfo.setStages(stages);
 	pipeline->mPipeline = device->createGraphicsPipeline(device.PipelineCache(), createInfo);
-	device.SetDebugName(***pipeline, vertexShader->SourceFiles()[0].stem().string() + ":" + vertexShader->EntryPointName() + " | " + fragmentShader->SourceFiles()[0].stem().string() + fragmentShader->EntryPointName());
+	device.SetDebugName(***pipeline, name);
 
 	return pipeline;
 }

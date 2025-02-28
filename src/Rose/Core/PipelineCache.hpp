@@ -58,7 +58,7 @@ public:
 	}
 
 
-	inline ref<ShaderModule> getShader(Device& device, const uint32_t index, const ShaderDefines& defines = {}) {
+	inline const ref<ShaderModule>& getShader(Device& device, const uint32_t index, const ShaderDefines& defines = {}) {
 		if (auto it = cachedShaders[index].find(defines); it != cachedShaders[index].end()) {
 			// shader hot reload
 			if (ImGui::IsKeyPressed(ImGuiKey_F5, false) && it->second->IsStale()) {
@@ -69,8 +69,7 @@ public:
 		}
 
 		auto shader = ShaderModule::Create(device, stages[index].path, stages[index].entry, "sm_6_7", defines);
-		cachedShaders[index].emplace(defines, shader);
-		return shader;
+		return cachedShaders[index].emplace(defines, shader).first->second;
 	}
 
 
@@ -97,27 +96,16 @@ public:
 
 		// pipeline not in cache. create & cache pipeline.
 
-		ref<ShaderModule> computeShader, vertexShader, fragmentShader;
+		std::vector<ref<const ShaderModule>> shaders(stages.size());
 		for (uint32_t i = 0; i < stages.size(); i++) {
-			ref<ShaderModule> shader = getShader(device, i, defines);
-			switch (shader->Stage()) {
-			case vk::ShaderStageFlagBits::eCompute:
-				computeShader = shader;
-				break;
-			case vk::ShaderStageFlagBits::eVertex:
-				vertexShader = shader;
-				break;
-			case vk::ShaderStageFlagBits::eFragment:
-				fragmentShader = shader;
-				break;
-			}
+			shaders[i] = getShader(device, i, defines);
 		}
 
 		ref<Pipeline> p;
-		if (computeShader) {
-			p = Pipeline::CreateCompute(device, computeShader, std::get<ComputePipelineInfo>(pipelineInfo), layoutInfo);
+		if (shaders.size() == 1 && shaders[0]->Stage() == vk::ShaderStageFlagBits::eCompute) {
+			p = Pipeline::CreateCompute(device, shaders[0], std::get<ComputePipelineInfo>(pipelineInfo), layoutInfo);
 		} else {
-			p = Pipeline::CreateGraphics(device, vertexShader, fragmentShader, std::get<GraphicsPipelineInfo>(pipelineInfo), layoutInfo);
+			p = Pipeline::CreateGraphics(device, shaders, std::get<GraphicsPipelineInfo>(pipelineInfo), layoutInfo);
 		}
 
 		cachedPipelines.emplace(key, p);

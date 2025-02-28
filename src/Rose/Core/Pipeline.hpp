@@ -98,7 +98,7 @@ private:
 public:
 	static ref<Pipeline> CreateCompute(const Device& device, const ref<const ShaderModule>& shader, const ComputePipelineInfo& info = {}, const PipelineLayoutInfo& layoutInfo = {}, const DescriptorSetLayouts& descriptorSetLayouts = {});
 	static ref<Pipeline> CreateCompute(const Device& device, const ref<const ShaderModule>& shader, const ref<PipelineLayout>& layout, const ComputePipelineInfo& info = {});
-	static ref<Pipeline> CreateGraphics(const Device& device, const ref<const ShaderModule>& vertexShader, const ref<const ShaderModule>& fragmentShader, const GraphicsPipelineInfo& info = {}, const PipelineLayoutInfo& layoutInfo = {}, const DescriptorSetLayouts& descriptorSetLayouts = {});
+	static ref<Pipeline> CreateGraphics(const Device& device, const vk::ArrayProxy<const ref<const ShaderModule>>& shaders, const GraphicsPipelineInfo& info = {}, const PipelineLayoutInfo& layoutInfo = {}, const DescriptorSetLayouts& descriptorSetLayouts = {});
 
 	inline       vk::raii::Pipeline& operator*()        { return mPipeline; }
 	inline const vk::raii::Pipeline& operator*() const  { return mPipeline; }
