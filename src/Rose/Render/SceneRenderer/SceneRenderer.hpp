@@ -115,7 +115,7 @@ private:
 				{ "scene.meshBuffers", vk::DescriptorBindingFlagBits::ePartiallyBound },
 				{ "scene.images",      vk::DescriptorBindingFlagBits::ePartiallyBound } },
 			.immutableSamplers      = { { "scene.sampler", { cachedSampler } } } };
-		auto pipeline = Pipeline::CreateGraphics(device, vs, fs, pipelineInfo, layoutInfo);
+		auto pipeline = Pipeline::CreateGraphics(device, { vs, fs }, pipelineInfo, layoutInfo);
 		return *cachedPipelines.emplace(key, CachedPipeline{ .pipeline = pipeline, .renderTargetFormat = format }).first;
 	}
 
