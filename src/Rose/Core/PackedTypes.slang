@@ -1,6 +1,6 @@
 #pragma once
 
-__exported import DxgiFormatConvert;
+#include "DxgiFormatConvert.h"
 
 [Differentiable]
 float2 ToOctahedral(const float3 v) {

@@ -47,7 +47,10 @@ struct WindowedApp {
 			instanceExtensions.emplace_back(e);
 
 		instance = Instance::Create(instanceExtensions, {
-			"VK_LAYER_KHRONOS_validation",
+			//VK_LAYER_LUNARG_parameter_validation",
+			//VK_LAYER_LUNARG_object_tracker",
+			//VK_LAYER_LUNARG_core_validation",
+			//VK_LAYER_KHRONOS_validation",
 			//"VK_LAYER_KHRONOS_synchronization2"
 		});
 

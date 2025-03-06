@@ -537,7 +537,7 @@ public:
 
 	#pragma region Dispatch
 
-	void Dispatch(Pipeline& pipeline, const uint3 threadCount, const ShaderParameter& rootParameter) {
+	void Dispatch(const Pipeline& pipeline, const uint3 threadCount, const ShaderParameter& rootParameter) {
 		mCommandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline);
 		BindParameters(*pipeline.Layout(), rootParameter);
 		ExecuteBarriers();
@@ -545,11 +545,11 @@ public:
 		auto dim = GetDispatchDim(pipeline.GetShader()->WorkgroupSize(), threadCount);
 		mCommandBuffer.dispatch(dim.x, dim.y, dim.z);
 	}
-	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1)   , rootParameter); }
-	void Dispatch(Pipeline& pipeline, const uint32_t threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1, 1), rootParameter); }
+	void Dispatch(const Pipeline& pipeline, const uint2    threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1)   , rootParameter); }
+	void Dispatch(const Pipeline& pipeline, const uint32_t threadCount, const ShaderParameter& rootParameter) { Dispatch(pipeline, uint3(threadCount, 1, 1), rootParameter); }
 
 
-	void Dispatch(Pipeline& pipeline, const uint3 threadCount, const DescriptorSets& descriptorSets) {
+	void Dispatch(const Pipeline& pipeline, const uint3 threadCount, const DescriptorSets& descriptorSets) {
 		mCommandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline);
 
 		BindDescriptors(*pipeline.Layout(), descriptorSets);
@@ -557,8 +557,8 @@ public:
 		auto dim = GetDispatchDim(pipeline.GetShader()->WorkgroupSize(), threadCount);
 		mCommandBuffer.dispatch(dim.x, dim.y, dim.z);
 	}
-	void Dispatch(Pipeline& pipeline, const uint2    threadCount, const DescriptorSets& descriptorSets) { Dispatch(pipeline, uint3(threadCount, 1)   , descriptorSets); }
-	void Dispatch(Pipeline& pipeline, const uint32_t threadCount, const DescriptorSets& descriptorSets) { Dispatch(pipeline, uint3(threadCount, 1, 1), descriptorSets); }
+	void Dispatch(const Pipeline& pipeline, const uint2    threadCount, const DescriptorSets& descriptorSets) { Dispatch(pipeline, uint3(threadCount, 1)   , descriptorSets); }
+	void Dispatch(const Pipeline& pipeline, const uint32_t threadCount, const DescriptorSets& descriptorSets) { Dispatch(pipeline, uint3(threadCount, 1, 1), descriptorSets); }
 
 	#pragma endregion
 };
