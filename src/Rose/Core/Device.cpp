@@ -52,28 +52,28 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 			createInfo.template unlink<FeatureStruct>();
 	};
 
-	configureExtension.operator()<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME, [](vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT& v) {
+	configureExtension.template operator()<vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT>(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME, [](vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT& v) {
 		v.shaderBufferFloat32AtomicAdd = true;
 	});
 
-	configureExtension.operator()<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, [](vk::PhysicalDeviceAccelerationStructureFeaturesKHR& v) {
+	configureExtension.template operator()<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, [](vk::PhysicalDeviceAccelerationStructureFeaturesKHR& v) {
 		v.accelerationStructure = true;
 	});
 
-	configureExtension.operator()<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, [](vk::PhysicalDeviceRayTracingPipelineFeaturesKHR& v) {
+	configureExtension.template operator()<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, [](vk::PhysicalDeviceRayTracingPipelineFeaturesKHR& v) {
 		v.rayTracingPipeline = true;
 		v.rayTraversalPrimitiveCulling = true;
 	});
 
-	configureExtension.operator()<vk::PhysicalDeviceRayQueryFeaturesKHR>(VK_KHR_RAY_QUERY_EXTENSION_NAME, [](vk::PhysicalDeviceRayQueryFeaturesKHR& v) {
+	configureExtension.template operator()<vk::PhysicalDeviceRayQueryFeaturesKHR>(VK_KHR_RAY_QUERY_EXTENSION_NAME, [](vk::PhysicalDeviceRayQueryFeaturesKHR& v) {
 		v.rayQuery = true;
 	});
 
-	configureExtension.operator()<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, [](vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR& v) {
+	configureExtension.template operator()<vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR>(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, [](vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR& v) {
 		v.fragmentShaderBarycentric = true;
 	});
 
-	configureExtension.operator()<vk::PhysicalDeviceMeshShaderFeaturesEXT>(VK_EXT_MESH_SHADER_EXTENSION_NAME, [](vk::PhysicalDeviceMeshShaderFeaturesEXT& v){
+	configureExtension.template operator()<vk::PhysicalDeviceMeshShaderFeaturesEXT>(VK_EXT_MESH_SHADER_EXTENSION_NAME, [](vk::PhysicalDeviceMeshShaderFeaturesEXT& v){
 		v.meshShader = true;
 		v.meshShaderQueries = true;
 		v.taskShader = true;
