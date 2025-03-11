@@ -62,7 +62,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(
 
 	if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
 		print_fn(std::cerr << BOLDRED);
-		throw std::runtime_error(pCallbackData->pMessage);
+		//throw std::runtime_error(pCallbackData->pMessage);
 	} else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 		print_fn(std::cerr << BOLDYELLOW);
 	else

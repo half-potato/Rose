@@ -130,7 +130,7 @@ public:
 			.dynamicRenderingState = DynamicRenderingState{
 				.colorFormats = { swapchain->GetFormat().format },
 				.depthFormat = {} } };
-		pipeline = Pipeline::CreateGraphics(*device, vertexShader, fragmentShader, pipelineInfo);
+		pipeline = Pipeline::CreateGraphics(*device, { vertexShader, fragmentShader }, pipelineInfo);
 
 		return true;
 	}

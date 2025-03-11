@@ -19,7 +19,7 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	features.wideLines = true;
 	features.largePoints = true;
 	features.sampleRateShading = true;
-	//features.shaderInt16 = true;
+	features.shaderInt16 = true;
 	features.shaderFloat64 = true;
 	//features.geometryShader = true;
 	//features.shaderStorageBufferArrayDynamicIndexing = true;
