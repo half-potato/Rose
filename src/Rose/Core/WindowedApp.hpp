@@ -41,17 +41,16 @@ struct WindowedApp {
 	double fps = 0;
 	std::chrono::high_resolution_clock::time_point lastFrame = {};
 
+	inline CommandContext& CurrentContext() { return *contexts[swapchain->ImageIndex()]; }
+
 	inline WindowedApp(const std::string& windowTitle, const vk::ArrayProxy<const std::string> &deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }) {
 		std::vector<std::string> instanceExtensions;
 		for (const auto& e : Window::RequiredInstanceExtensions())
 			instanceExtensions.emplace_back(e);
 
 		instance = Instance::Create(instanceExtensions, {
-			//VK_LAYER_LUNARG_parameter_validation",
-			//VK_LAYER_LUNARG_object_tracker",
-			//VK_LAYER_LUNARG_core_validation",
-			//VK_LAYER_KHRONOS_validation",
-			//"VK_LAYER_KHRONOS_synchronization2"
+			"VK_LAYER_KHRONOS_validation",
+			//"VK_LAYER_KHRONOS_synchronization2",
 		});
 
 		vk::raii::PhysicalDevice physicalDevice = nullptr;

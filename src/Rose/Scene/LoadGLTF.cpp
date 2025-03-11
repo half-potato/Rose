@@ -30,7 +30,7 @@ ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& fi
 	std::vector<ref<Material<ImageView>>> materials(model.materials.size());
 
 	vk::BufferUsageFlags bufferUsage = vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eIndexBuffer|vk::BufferUsageFlagBits::eStorageBuffer|vk::BufferUsageFlagBits::eTransferDst|vk::BufferUsageFlagBits::eTransferSrc;
-	if (device.CreateInfo().get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>().accelerationStructure) {
+	if (device.EnabledExtensions().contains(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
 		bufferUsage |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
 		bufferUsage |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
 	}

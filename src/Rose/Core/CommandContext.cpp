@@ -46,13 +46,13 @@ void CommandContext::Begin() {
 	}
 }
 
-void CommandContext::PushDebugLabel(const std::string& name, const float4 color) {
+void CommandContext::PushDebugLabel(const std::string& name, const float4 color) const {
 	if (!mDevice->DebugUtilsEnabled()) return;
 	mCommandBuffer.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
 		.pLabelName = name.c_str(),
 		.color = { { color.x, color.y, color.z, color.w } }	});
 }
-void CommandContext::PopDebugLabel() {
+void CommandContext::PopDebugLabel() const {
 	if (!mDevice->DebugUtilsEnabled()) return;
 	mCommandBuffer.endDebugUtilsLabelEXT();
 }
@@ -330,7 +330,7 @@ struct DescriptorSetWriter {
 					} else if (const auto* v = param.get_if<AccelerationStructureParameter>()) {
 						const auto& as = *v;
 						if (!as) continue;
-						WriteAccelerationStructure(*descriptorBinding, arrayIndex, bindingOffset, vk::WriteDescriptorSetAccelerationStructureKHR{}.setAccelerationStructures(**as));
+						WriteAccelerationStructure(*descriptorBinding, arrayIndex, bindingOffset, vk::WriteDescriptorSetAccelerationStructureKHR{}.setAccelerationStructures(***as));
 					}
 				} else {
 					std::cout << "Warning: Attempting to bind descriptor parameter to non-descriptor binding" << std::endl;

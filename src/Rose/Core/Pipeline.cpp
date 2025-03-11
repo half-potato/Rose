@@ -21,7 +21,14 @@ struct PipelineBindings {
 	vk::ShaderStageFlags pushConstantStages = vk::ShaderStageFlags{0};
 
 	// inserts bindings in shaderBinding into pipelineBinding
-	void AddBindings(ShaderParameterBinding& pipelineBinding, const ShaderParameterBinding& shaderBinding, const vk::ShaderStageFlagBits stage, const PipelineLayoutInfo& info, uint32_t constantOffset = 0, const std::string parentName = "") {
+	void AddBindings(
+		const Device& device,
+		ShaderParameterBinding& pipelineBinding,
+		const ShaderParameterBinding& shaderBinding,
+		const vk::ShaderStageFlagBits stage,
+		PipelineLayoutInfo& info,
+		uint32_t constantOffset = 0,
+		const std::string parentName = "") {
 		for (const auto&[id, subBinding] : shaderBinding) {
 			auto it = pipelineBinding.find(id);
 			const bool hasBinding = it != pipelineBinding.end();
@@ -93,7 +100,17 @@ struct PipelineBindings {
 				std::vector<vk::Sampler> samplers;
 				if (auto s_it = info.immutableSamplers.find(fullName); s_it != info.immutableSamplers.end()) {
 					samplers.resize(s_it->second.size());
-					std::ranges::transform(s_it->second, samplers.begin(), [](const ref<vk::raii::Sampler>& s){ return **s; });
+					for (uint32_t i = 0; i < s_it->second.size(); i++) {
+						auto& sv = s_it->second[i];
+						if (auto* v = std::get_if<ref<vk::raii::Sampler>>(&sv)) {
+							samplers[i] = ***v;
+						} else if (auto* v = std::get_if<vk::SamplerCreateInfo>(&sv)) {
+							// convert vk::SamplerCreateInfo into actual Samplers
+							auto s = make_ref<vk::raii::Sampler>(*device, *v);
+							samplers[i] = **s;
+							sv = s;
+						}
+					}
 				}
 
 				// increase set count if needed
@@ -119,7 +136,7 @@ struct PipelineBindings {
 				}
 			}
 
-			AddBindings(pipelineBinding[id], subBinding, stage, info, offset, fullName);
+			AddBindings(device, pipelineBinding[id], subBinding, stage, info, offset, fullName);
 		}
 	};
 };
@@ -177,7 +194,7 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::Array
 	layout->mStageMask         = (vk::ShaderStageFlagBits)0;
 	layout->mPipelineStageMask = (vk::PipelineStageFlagBits2)0;
 	for (const auto& shader : shaders) {
-		bindings.AddBindings(layout->mRootBinding, shader->RootBinding(), shader->Stage(), info);
+		bindings.AddBindings(device, layout->mRootBinding, shader->RootBinding(), shader->Stage(), layout->mInfo);
 		layout->mStageMask |= shader->Stage();
 		layout->mPipelineStageMask |= GetPipelineStage(shader->Stage());
 	}
@@ -208,7 +225,7 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::Array
 		vk::DescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo = {};
 		bindingFlagsInfo.setBindingFlags(bindingFlags);
 		vk::DescriptorSetLayoutCreateInfo createInfo = {};
-		createInfo.flags = info.descriptorSetLayoutFlags;
+		createInfo.flags = layout->mInfo.descriptorSetLayoutFlags;
 		createInfo.setBindings(layoutBindings);
 		if (hasFlags) createInfo.setPNext(&bindingFlagsInfo);
 		layout->mDescriptorSetLayouts[i] = make_ref<vk::raii::DescriptorSetLayout>(std::move(device->createDescriptorSetLayout(createInfo)));
@@ -225,7 +242,7 @@ ref<PipelineLayout> PipelineLayout::Create(const Device& device, const vk::Array
 	for (const auto& ds : layout->mDescriptorSetLayouts)
 		vklayouts.emplace_back(**ds);
 	vk::PipelineLayoutCreateInfo createInfo = {};
-	createInfo.flags = info.flags;
+	createInfo.flags = layout->mInfo.flags;
 	createInfo.setSetLayouts(vklayouts);
 	createInfo.setPushConstantRanges(pushConstantRanges);
 	layout->mLayout = device->createPipelineLayout(createInfo);

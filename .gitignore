@@ -15,4 +15,3 @@ compile_commands.json
 CTestTestfile.cmake
 *.aps
 imgui.ini
-thirdparty/slang

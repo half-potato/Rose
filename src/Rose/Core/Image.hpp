@@ -471,7 +471,7 @@ struct ImageView {
 	vk::ImageViewType         mType = vk::ImageViewType::e2D;
 	vk::ComponentMapping      mComponentMapping = {};
 
-	static ImageView Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
+	static ImageView Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource = { vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS }, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
 
 	inline       vk::ImageView& operator*()        { return mView; }
 	inline const vk::ImageView& operator*() const  { return mView; }

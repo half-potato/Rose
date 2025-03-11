@@ -10,7 +10,7 @@ struct PipelineLayoutInfo {
 	vk::PipelineLayoutCreateFlags                flags = {};
 	vk::DescriptorSetLayoutCreateFlags           descriptorSetLayoutFlags = {};
 	NameMap<vk::DescriptorBindingFlags>          descriptorBindingFlags = {};
-	NameMap<std::vector<ref<vk::raii::Sampler>>> immutableSamplers = {};
+	NameMap<std::vector<std::variant<ref<vk::raii::Sampler>, vk::SamplerCreateInfo>>> immutableSamplers = {};
 };
 
 using DescriptorSetLayouts = std::vector<ref<vk::raii::DescriptorSetLayout>>;

@@ -2,6 +2,7 @@
 
 #include "Buffer.hpp"
 #include "Image.hpp"
+#include "AccelerationStructure.hpp"
 #include "Pipeline.hpp"
 #include "ParameterMap.hpp"
 
@@ -64,7 +65,7 @@ struct ImageParameter {
 	ref<vk::raii::Sampler> sampler = {};
 };
 
-using AccelerationStructureParameter = ref<vk::raii::AccelerationStructureKHR>;
+using AccelerationStructureParameter = ref<AccelerationStructure>;
 
 using ShaderParameter = ParameterMap<
 	std::monostate,
@@ -148,8 +149,8 @@ public:
 	void PushConstants  (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) const;
 	void BindParameters (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter);
 
-	void PushDebugLabel(const std::string& name, const float4 color = float4(1,1,1,0));
-	void PopDebugLabel();
+	void PushDebugLabel(const std::string& name, const float4 color = float4(1,1,1,0)) const;
+	void PopDebugLabel() const;
 
 	#pragma region Barriers
 

@@ -24,7 +24,7 @@ bool LoadHit(uint4 hit, out Scene::Vertex vertex, out Material material) {
 
     const InstanceHeader instance = scene.instances[hit.x];
     vertex = scene.LoadVertex(scene.meshes[instance.meshIndex], hit.y, asfloat(hit.zw));
-    vertex = scene.TransformVertex(instance, vertex);
+    scene.TransformVertex(instance, vertex);
     material = scene.materials[instance.materialIndex];
 
     // Sample material images
@@ -56,7 +56,7 @@ bool SampleLight(inout RandomSampler rng, const Scene::Vertex vertex, out float3
     le = scene.backgroundColor;
     if (scene.backgroundImage < scene.imageCount) {
         const float2 uv = SampleTexel(scene.images[scene.backgroundImage], rng.NextFloat().xy, pdf);
-        dir = sph2xyz(uv);
+        dir = sphuv2xyz(uv);
         pdf /= (2 * M_PI * M_PI * sqrt(1 - dir.y * dir.y));
         le *= scene.SampleImageUniform(scene.backgroundImage, uv).rgb;
     } else {
@@ -103,7 +103,7 @@ void main(uint3 index: SV_DispatchThreadID) {
         if (scene.backgroundImage < scene.imageCount) {
             const float2 clip = 2 * (index.xy + .5) / float2(imageSize) - 1;
             const float3 dir = normalize(cameraToWorld.TransformVector(inverseProjection.ProjectPoint(float3(clip.x, -clip.y, 1))));
-            le *= scene.SampleImageUniform(scene.backgroundImage, xyz2sph(dir)).rgb;
+            le *= scene.SampleImageUniform(scene.backgroundImage, xyz2sphuv(dir)).rgb;
         }
     }
 

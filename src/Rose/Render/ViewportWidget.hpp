@@ -7,19 +7,7 @@
 
 namespace RoseEngine {
 
-struct GBuffer {
-	ImageView renderTarget;
-	ImageView visibility;
-	ImageView depth;
-};
-struct RenderData {
-	GBuffer   gbuffer;
-	Transform cameraToWorld;
-	Transform worldToCamera;
-	Transform projection;
-};
-
-struct EditorCamera {
+struct ViewportCamera {
 	float3 cameraPos   = float3(0, 2, 2);
 	float2 cameraAngle = float2(-float(M_PI)/4,0);
 	float  fovY  = 50.f; // in degrees
@@ -27,10 +15,13 @@ struct EditorCamera {
 
 	float moveSpeed = 1.f;
 
-	inline quat Rotation() const {
-		quat rx = glm::angleAxis(cameraAngle.x, float3(1,0,0));
-		quat ry = glm::angleAxis(cameraAngle.y, float3(0,1,0));
-		return ry * rx;
+	inline void DrawInspectorGui() {
+		ImGui::PushID("Camera");
+		ImGui::DragFloat3("Position", &cameraPos.x);
+		ImGui::DragFloat2("Angle", &cameraAngle.x);
+		Gui::ScalarField("Vertical field of view", &fovY);
+		Gui::ScalarField("Near Z", &nearZ);
+		ImGui::PopID();
 	}
 
 	inline void Update(double dt) {
@@ -63,223 +54,178 @@ struct EditorCamera {
 		}
 	}
 
-	inline void UpdateMatrices(RenderData& renderData) const {
-		renderData.cameraToWorld = Transform::Translate(cameraPos) * Transform::Rotate(Rotation());
-		renderData.worldToCamera = inverse( renderData.cameraToWorld );
+	inline quat Rotation() const {
+		quat rx = glm::angleAxis(cameraAngle.x, float3(1,0,0));
+		quat ry = glm::angleAxis(cameraAngle.y, float3(0,1,0));
+		return ry * rx;
+	}
 
-		float aspect = renderData.gbuffer.renderTarget.Extent().x / (float)renderData.gbuffer.renderTarget.Extent().y;
-		renderData.projection = Transform::Perspective(glm::radians(fovY), aspect, nearZ);
+	inline Transform GetCameraToWorld() const {
+		return Transform::Translate(cameraPos) * Transform::Rotate(Rotation());
+	}
+
+	// aspect = width / height
+	inline Transform GetProjection(float aspect) const {
+		return Transform::Perspective(glm::radians(fovY), aspect, nearZ);
 	}
 };
-inline void InspectorGui(EditorCamera& camera) {
-	ImGui::PushID("Camera");
-	ImGui::DragFloat3("Position", &camera.cameraPos.x);
-	ImGui::DragFloat2("Angle", &camera.cameraAngle.x);
-	Gui::ScalarField("Vertical field of view", &camera.fovY);
-	Gui::ScalarField("Near Z", &camera.nearZ);
-	ImGui::PopID();
-}
 
-/*
-class IRenderer {
-public:
-	virtual void Initialize(CommandContext& context) = 0;
-	virtual void InspectorWidget(CommandContext& context) = 0;
-
-	virtual void PreRender (CommandContext& context, const RenderData& renderData) = 0;
-	virtual void Render    (CommandContext& context, const RenderData& renderData) = 0;
-	virtual void PostRender(CommandContext& context, const RenderData& renderData) = 0;
+struct ViewportAttachmentInfo {
+	std::string    name;
+	vk::Format     format;
+	vk::ClearValue clearValue;
 };
-*/
 
-template<typename...RendererTypes>
+template<typename T> concept has_member_InspectorWidget = requires(T r, CommandContext& context) { r.InspectorWidget(context); };
+template<typename T, typename ArgType> concept has_member_PreRender  = requires(T r, CommandContext& context, ArgType& renderData) { r.PreRender (context, renderData); };
+template<typename T, typename ArgType> concept has_member_Render     = requires(T r, CommandContext& context, ArgType& renderData) { r.Render    (context, renderData); };
+template<typename T, typename ArgType> concept has_member_PostRender = requires(T r, CommandContext& context, ArgType& renderData) { r.PostRender(context, renderData); };
+
+// Each RendererTypes can implement the following functions:
+// void InspectorWidget(CommandContext& context)
+// void PreRender (CommandContext& context, const RenderArgType& renderData);
+// void Render    (CommandContext& context, const RenderArgType& renderData);
+// void PostRender(CommandContext& context, const RenderArgType& renderData);
+template<typename RenderArgType, typename...RendererTypes>
 class ViewportWidget {
 public:
 	using RendererRef = std::variant<ref<RendererTypes>...>;
 
-	inline ViewportWidget(CommandContext& context, const std::vector<RendererRef>& renderers_) : renderers(renderers_) {
-		context.Begin();
-		for (const auto& rv : renderers)
-			std::visit([&](const auto& r) { r->Initialize(context); }, rv);
-		context.Submit();
+private:
+	std::vector<ViewportAttachmentInfo> attachmentInfos = {};
+	std::vector<RendererRef> renderers = {};
+	ViewportCamera camera = {};
+
+	template<has_member_InspectorWidget T>
+	inline static void RendererDrawGui(T& r, CommandContext& context) { r.InspectorWidget(context); }
+	template<typename T>
+	inline static void RendererDrawGui(T& r, CommandContext& context) {}
+
+	template<has_member_PreRender<RenderArgType> T>
+	inline static void RendererPreRender (T& r, CommandContext& context, RenderArgType& renderData) { r.PreRender(context, renderData); }
+	template<typename T>
+	inline static void RendererPreRender(T& r, CommandContext& context, RenderArgType& renderData) {}
+
+	template<has_member_Render<RenderArgType> T>
+	inline static void RendererRender    (T& r, CommandContext& context, RenderArgType& renderData) { r.Render(context, renderData); }
+	template<typename T>
+	inline static void RendererRender(T& r, CommandContext& context, RenderArgType& renderData) {}
+
+	template<has_member_PostRender<RenderArgType> T>
+	inline static void RendererPostRender(T& r, CommandContext& context, RenderArgType& renderData) { r.PostRender(context, renderData); }
+	template<typename T>
+	inline static void RendererPostRender(T& r, CommandContext& context, RenderArgType& renderData) {}
+
+	inline void BeginRendering(CommandContext& context, auto getImageFn) const {
+		uint2 imageExtent;
+
+		std::vector<vk::RenderingAttachmentInfo> attachments;
+		vk::RenderingAttachmentInfo depthAttachmentInfo;
+		bool hasDepthAttachment = false;
+		attachments.reserve(attachmentInfos.size());
+		for (const auto& [name, format, clearValue] : attachmentInfos) {
+			const ImageView& attachment = getImageFn(name);
+			imageExtent = attachment.Extent();
+			if (IsDepthStencil(format)) {
+				context.AddBarrier(attachment, Image::ResourceState{
+					.layout = vk::ImageLayout::eDepthAttachmentOptimal,
+					.stage  = vk::PipelineStageFlagBits2::eLateFragmentTests,
+					.access =  vk::AccessFlagBits2::eDepthStencilAttachmentRead|vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+					.queueFamily = context.QueueFamily()
+				});
+
+				depthAttachmentInfo = vk::RenderingAttachmentInfo {
+					.imageView = *attachment,
+					.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+					.resolveMode = vk::ResolveModeFlagBits::eNone,
+					.resolveImageView = {},
+					.resolveImageLayout = vk::ImageLayout::eUndefined,
+					.loadOp  = vk::AttachmentLoadOp::eClear,
+					.storeOp = vk::AttachmentStoreOp::eStore,
+					.clearValue = clearValue
+				};
+
+				hasDepthAttachment = true;
+			} else {
+				context.AddBarrier(attachment, Image::ResourceState{
+					.layout = vk::ImageLayout::eColorAttachmentOptimal,
+					.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+					.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
+					.queueFamily = context.QueueFamily()
+				});
+
+				attachments.emplace_back(vk::RenderingAttachmentInfo {
+					.imageView = *attachment,
+					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+					.resolveMode = vk::ResolveModeFlagBits::eNone,
+					.resolveImageView = {},
+					.resolveImageLayout = vk::ImageLayout::eUndefined,
+					.loadOp  = vk::AttachmentLoadOp::eClear,
+					.storeOp = vk::AttachmentStoreOp::eStore,
+					.clearValue = clearValue
+				});
+			}
+		}
+
+		context.ExecuteBarriers();
+
+		context->beginRendering(vk::RenderingInfo {
+			.renderArea = vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ imageExtent.x, imageExtent.y } },
+			.layerCount = 1,
+			.viewMask = 0,
+			.colorAttachmentCount = (uint32_t)attachments.size(),
+			.pColorAttachments = attachments.data(),
+			.pDepthAttachment = hasDepthAttachment ? &depthAttachmentInfo : nullptr,
+			.pStencilAttachment = nullptr
+		});
+
+		context->setViewport(0, vk::Viewport{ 0, 0, (float)imageExtent.x, (float)imageExtent.y, 0, 1 });
+		context->setScissor(0, vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ imageExtent.x, imageExtent.y } } );
 	}
-	inline ViewportWidget(CommandContext& context, const ref<RendererTypes>&... renderers_) : renderers({ renderers_... }) {
-		context.Begin();
-		for (const auto& rv : renderers)
-			std::visit([&](const auto& r) { r->Initialize(context); }, rv);
-		context.Submit();
-	}
+
+public:
+	inline const auto& Camera() const { return camera; }
+	inline const auto& AttachmentInfos() const { return attachmentInfos; }
+
+	inline ViewportWidget(const std::vector<ViewportAttachmentInfo>& attachments_, const std::vector<RendererRef>& renderers_) : attachmentInfos(attachments_), renderers(renderers_) {}
 
 	inline void InspectorWidget(CommandContext& context) {
 		if (ImGui::CollapsingHeader("Camera")) {
-			InspectorGui(camera);
+			camera.DrawInspectorGui();
 		}
 
 		for (const auto& rv : renderers)
-			std::visit([&](const auto& r) { r->InspectorWidget(context); }, rv);
+			std::visit([&](auto& r) { RendererDrawGui(*r, context); }, rv);
 	}
 
-	inline void Render(CommandContext& context, double dt) {
-		const float2 extentf = std::bit_cast<float2>(ImGui::GetWindowContentRegionMax()) - std::bit_cast<float2>(ImGui::GetWindowContentRegionMin());
-		const uint2 extent = uint2(extentf);
-
+	inline void Update(double dt) {
 		camera.Update(dt);
+	}
 
-		if (extent.x == 0 || extent.y == 0) return;
-
-		RenderData renderData = GetRenderData(context, extent);
-
-		ImGui::Image(Gui::GetTextureID(renderData.gbuffer.renderTarget, vk::Filter::eNearest), std::bit_cast<ImVec2>(extentf));
-
-		{ // ImGuizmo viewport
-			const float2 viewportMin = std::bit_cast<float2>(ImGui::GetItemRectMin());
-			const float2 viewportMax = std::bit_cast<float2>(ImGui::GetItemRectMax());
-			ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y);
-			ImGuizmo::SetID(0);
-		}
-
+	inline void Render(CommandContext& context, RenderArgType& renderData, auto getImageFn) const {
 		{ // pre render
 			context.PushDebugLabel("ViewportWidget::PreRender");
 			for (const auto& rv : renderers)
-				std::visit([&](const auto& r) { r->PreRender(context, renderData); }, rv);
+				std::visit([&](auto& r) { RendererPreRender(*r, context, renderData); }, rv);
 			context.PopDebugLabel(); // ViewportWidget::PreRender
 		}
 
-		{ // barriers & beginRendering
-			context.AddBarrier(renderData.gbuffer.renderTarget, Image::ResourceState{
-				.layout = vk::ImageLayout::eColorAttachmentOptimal,
-				.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-				.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
-				.queueFamily = context.QueueFamily() });
-			context.AddBarrier(renderData.gbuffer.visibility, Image::ResourceState{
-				.layout = vk::ImageLayout::eColorAttachmentOptimal,
-				.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-				.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
-				.queueFamily = context.QueueFamily() });
-			context.AddBarrier(renderData.gbuffer.depth, Image::ResourceState{
-				.layout = vk::ImageLayout::eDepthAttachmentOptimal,
-				.stage  = vk::PipelineStageFlagBits2::eLateFragmentTests,
-				.access =  vk::AccessFlagBits2::eDepthStencilAttachmentRead|vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-				.queueFamily = context.QueueFamily() });
-			context.ExecuteBarriers();
-
-			vk::RenderingAttachmentInfo attachments[2] = {
-				vk::RenderingAttachmentInfo {
-					.imageView = *renderData.gbuffer.renderTarget,
-					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-					.resolveMode = vk::ResolveModeFlagBits::eNone,
-					.resolveImageView = {},
-					.resolveImageLayout = vk::ImageLayout::eUndefined,
-					.loadOp  = vk::AttachmentLoadOp::eClear,
-					.storeOp = vk::AttachmentStoreOp::eStore,
-					.clearValue = vk::ClearValue{vk::ClearColorValue{std::array<float,4>{ 0, 0, 0, 0 }} } },
-				vk::RenderingAttachmentInfo {
-					.imageView = *renderData.gbuffer.visibility,
-					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-					.resolveMode = vk::ResolveModeFlagBits::eNone,
-					.resolveImageView = {},
-					.resolveImageLayout = vk::ImageLayout::eUndefined,
-					.loadOp  = vk::AttachmentLoadOp::eClear,
-					.storeOp = vk::AttachmentStoreOp::eStore,
-					.clearValue = vk::ClearValue{vk::ClearColorValue{std::array<uint,4>{ ~0u, ~0u, ~0u, ~0u }} } } };
-			vk::RenderingAttachmentInfo depthAttachment {
-				.imageView = *renderData.gbuffer.depth,
-				.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-				.resolveMode = vk::ResolveModeFlagBits::eNone,
-				.resolveImageView = {},
-				.resolveImageLayout = vk::ImageLayout::eUndefined,
-				.loadOp  = vk::AttachmentLoadOp::eClear,
-				.storeOp = vk::AttachmentStoreOp::eStore,
-				.clearValue = vk::ClearValue{vk::ClearDepthStencilValue{1.f, 0}} };
-			context->beginRendering(vk::RenderingInfo {
-				.renderArea = vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ extent.x, extent.y } },
-				.layerCount = 1,
-				.viewMask = 0,
-				.colorAttachmentCount = 2,
-				.pColorAttachments = attachments,
-				.pDepthAttachment = &depthAttachment });
-		}
-
-		{ // render
-			context->setViewport(0, vk::Viewport{ 0, 0, extentf.x, extentf.y, 0, 1 });
-			context->setScissor(0, vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ extent.x, extent.y } } );
-
+		 // rasterization
+		BeginRendering(context, getImageFn);
+		{
+			context.PushDebugLabel("ViewportWidget::Render");
 			for (const auto& rv : renderers)
-				std::visit([&](const auto& r) { r->Render(context, renderData); }, rv);
-
-			context->endRendering();
+				std::visit([&](const auto& r) { RendererRender(*r, context, renderData); }, rv);
+			context.PopDebugLabel(); // ViewportWidget::Render
 		}
+		context->endRendering();
 
 		{ // post render
 			context.PushDebugLabel("ViewportWidget::PostRender");
 			for (const auto& rv : renderers)
-				std::visit([&](const auto& r) { r->PostRender(context, renderData); }, rv);
+				std::visit([&](const auto& r) { RendererPostRender(*r, context, renderData); }, rv);
 			context.PopDebugLabel(); // ViewportWidget::PostRender
 		}
-	}
-
-private:
-	EditorCamera camera = {};
-	std::vector<RendererRef> renderers = {};
-
-	TransientResourceCache<GBuffer> cachedGBuffers = {};
-	uint2 cachedGbufferExtent = uint2(0,0);
-
-	inline RenderData GetRenderData(CommandContext& context, const uint2 extent) {
-		RenderData renderData = {};
-
-		if (cachedGbufferExtent != extent) {
-			context.GetDevice().Wait();
-			cachedGBuffers.clear();
-			cachedGbufferExtent = extent;
-		}
-		renderData.gbuffer = cachedGBuffers.pop_or_create(context.GetDevice(), [&]() {
-			auto renderTarget = ImageView::Create(
-					Image::Create(context.GetDevice(), ImageInfo{
-						.format = vk::Format::eR8G8B8A8Unorm,
-						.extent = uint3(extent, 1),
-						.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eColorAttachment,
-						.queueFamilies = { context.QueueFamily() } }),
-					vk::ImageSubresourceRange{
-						.aspectMask = vk::ImageAspectFlagBits::eColor,
-						.baseMipLevel = 0,
-						.levelCount = 1,
-						.baseArrayLayer = 0,
-						.layerCount = 1 });
-			auto visibility = ImageView::Create(
-					Image::Create(context.GetDevice(), ImageInfo{
-						.format = vk::Format::eR32G32B32A32Uint,
-						.extent = uint3(extent, 1),
-						.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment,
-						.queueFamilies = { context.QueueFamily() } }),
-					vk::ImageSubresourceRange{
-						.aspectMask = vk::ImageAspectFlagBits::eColor,
-						.baseMipLevel = 0,
-						.levelCount = 1,
-						.baseArrayLayer = 0,
-						.layerCount = 1 });
-			auto depth = ImageView::Create(
-					Image::Create(context.GetDevice(), ImageInfo{
-						.format = vk::Format::eD32Sfloat,
-						.extent = uint3(extent, 1),
-						.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eDepthStencilAttachment,
-						.queueFamilies = { context.QueueFamily() } }),
-					vk::ImageSubresourceRange{
-						.aspectMask = vk::ImageAspectFlagBits::eDepth,
-						.baseMipLevel = 0,
-						.levelCount = 1,
-						.baseArrayLayer = 0,
-						.layerCount = 1 });
-			return GBuffer{
-				.renderTarget = renderTarget,
-				.visibility   = visibility,
-				.depth        = depth };
-		});
-		cachedGBuffers.push(renderData.gbuffer, context.GetDevice().NextTimelineSignal());
-
-		camera.UpdateMatrices(renderData);
-
-		return renderData;
 	}
 };
 

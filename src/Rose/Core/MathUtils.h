@@ -7,15 +7,34 @@ namespace RoseEngine {
 inline float luminance(const float3 color) { return dot(color, float3(0.2126, 0.7152, 0.0722)); }
 inline float atan2_stable(const float y, const float x) { return x == 0.0 ? (y == 0 ? 0 : (y < 0 ? -M_PI / 2 : M_PI / 2)) : atan2(y, x); }
 
-inline float2 xyz2sph(const float3 v) {
+// cartesian to spherical UV [0-1]
+inline float2 xyz2sphuv(const float3 v) {
 	const float theta = atan2_stable(v.z, v.x);
 	return float2(theta*M_1_PI*.5 + .5, acos(clamp(v.y, -1.f, 1.f))*M_1_PI);
 }
-inline float3 sph2xyz(float2 uv) {
+// spherical UV [0-1] to cartesian
+inline float3 sphuv2xyz(float2 uv) {
 	uv.x = uv.x*2 - 1;
 	uv *= M_PI;
 	const float sinPhi = sin(uv.y);
 	return float3(sinPhi*cos(uv.x), cos(uv.y), sinPhi*sin(uv.x));
+}
+
+// Octahedral mapping
+float2 xyz2oct(const float3 v) {
+	const float3 n = v / (abs(v.x) + abs(v.y) + abs(v.z));
+	float2 xy = float2(n.x, n.y);
+    xy = n.z >= 0.f ? xy : (1.f - abs(float2(n.y, n.x))) * float2(xy.x >= 0.f ? 1.f : -1.f, xy.y >= 0.f ? 1.f : -1.f);
+    return xy * 0.5f + float2(0.5f);
+}
+float3 oct2xyz(const float2 p) {
+    float2 f = p * 2.f - float2(1.f);
+    // https://twitter.com/Stubbesaurus/status/937994790553227264
+    const float z = 1.f - abs(f.x) - abs(f.y);
+    const float t = saturate(-z);
+    f.x += f.x >= 0.f ? -t : t;
+    f.y += f.y >= 0.f ? -t : t;
+    return normalize(float3(f, z));
 }
 
 inline float3 srgb2rgb(const float3 srgb) {
