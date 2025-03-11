@@ -105,19 +105,6 @@ struct ParameterAccessPath {
 	bool pushConstant = false;
 };
 
-struct ParameterAccessPath {
-	static const size_t kInvalidAccessPath = ~size_t(0);
-
-	slang::VariableLayoutReflection* varLayout = nullptr;
-	size_t leafNode = kInvalidAccessPath;
-	size_t outer = kInvalidAccessPath;
-
-	size_t deepestConstantBuffer = kInvalidAccessPath;
-	size_t deepestParameterBlock = kInvalidAccessPath;
-	size_t depth = 0;
-	bool pushConstant = false;
-};
-
 struct ParameterEnumerator {
 	std::vector<ParameterAccessPath> nodes;
 
