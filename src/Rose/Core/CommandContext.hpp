@@ -536,6 +536,79 @@ public:
 
 	#pragma endregion
 
+	#pragma region Rasterization
+	inline void BeginRendering(const vk::ArrayProxy<std::pair<ImageView, vk::ClearValue>>& attachments) {
+		uint2 imageExtent;
+
+		std::vector<vk::RenderingAttachmentInfo> attachmentInfos;
+		vk::RenderingAttachmentInfo depthAttachmentInfo;
+		bool hasDepthAttachment = false;
+
+		attachmentInfos.reserve(attachments.size());
+		for (const auto& [attachment, clearValue] : attachments) {
+			imageExtent = attachment.Extent();
+			if (IsDepthStencil(attachment.GetImage()->Info().format)) {
+				AddBarrier(attachment, Image::ResourceState{
+					.layout = vk::ImageLayout::eDepthAttachmentOptimal,
+					.stage  = vk::PipelineStageFlagBits2::eLateFragmentTests,
+					.access =  vk::AccessFlagBits2::eDepthStencilAttachmentRead|vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+					.queueFamily = QueueFamily()
+				});
+
+				depthAttachmentInfo = vk::RenderingAttachmentInfo {
+					.imageView = *attachment,
+					.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+					.resolveMode = vk::ResolveModeFlagBits::eNone,
+					.resolveImageView = {},
+					.resolveImageLayout = vk::ImageLayout::eUndefined,
+					.loadOp  = vk::AttachmentLoadOp::eClear,
+					.storeOp = vk::AttachmentStoreOp::eStore,
+					.clearValue = clearValue
+				};
+
+				hasDepthAttachment = true;
+			} else {
+				AddBarrier(attachment, Image::ResourceState{
+					.layout = vk::ImageLayout::eColorAttachmentOptimal,
+					.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+					.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
+					.queueFamily = QueueFamily()
+				});
+
+				attachmentInfos.emplace_back(vk::RenderingAttachmentInfo {
+					.imageView = *attachment,
+					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+					.resolveMode = vk::ResolveModeFlagBits::eNone,
+					.resolveImageView = {},
+					.resolveImageLayout = vk::ImageLayout::eUndefined,
+					.loadOp  = vk::AttachmentLoadOp::eClear,
+					.storeOp = vk::AttachmentStoreOp::eStore,
+					.clearValue = clearValue
+				});
+			}
+		}
+
+		ExecuteBarriers();
+
+		mCommandBuffer.beginRendering(vk::RenderingInfo {
+			.renderArea = vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ imageExtent.x, imageExtent.y } },
+			.layerCount = 1,
+			.viewMask = 0,
+			.colorAttachmentCount = (uint32_t)attachmentInfos.size(),
+			.pColorAttachments = attachmentInfos.data(),
+			.pDepthAttachment = hasDepthAttachment ? &depthAttachmentInfo : nullptr,
+			.pStencilAttachment = nullptr
+		});
+
+		mCommandBuffer.setViewport(0, vk::Viewport{ 0, 0, (float)imageExtent.x, (float)imageExtent.y, 0, 1 });
+		mCommandBuffer.setScissor(0, vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ imageExtent.x, imageExtent.y } } );
+	}
+	inline void EndRendering() const {
+		mCommandBuffer.endRendering();
+	}
+
+	#pragma endregion
+
 	#pragma region Dispatch
 
 	void Dispatch(const Pipeline& pipeline, const uint3 threadCount, const ShaderParameter& rootParameter) {

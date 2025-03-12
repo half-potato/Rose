@@ -2,7 +2,6 @@
 
 #include <queue>
 
-#include <Rose/Render/ViewportWidget.hpp>
 #include <Rose/Scene/Scene.hpp>
 
 namespace RoseEngine {
@@ -120,7 +119,7 @@ public:
 			scene->SetDirty();
 	}
 
-	inline void PreRender(CommandContext& context, const SceneRendererArgs& renderData) {
+	inline void PreRender(CommandContext& context, const Transform& worldToCamera, const Transform& projection) {
 		// update selected node based on vbuffer pixel that was clicked on
 		if (!viewportPickerQueue.empty()) {
 			auto&[buf, value, nodes] = viewportPickerQueue.front();
@@ -150,14 +149,22 @@ public:
 			}
 
 			Transform t = n->transform.has_value() ? (parentTransform * n->transform.value()) : parentTransform;
-			if (TransformGizmoGui(t, renderData.worldToCamera, renderData.projection, (ImGuizmo::OPERATION)operation, opLocal)) {
+
+			if (ImGuizmo::Manipulate(
+				&worldToCamera.transform[0][0],
+				&projection.transform[0][0],
+				(ImGuizmo::OPERATION)operation,
+				opLocal ? ImGuizmo::MODE::LOCAL : ImGuizmo::MODE::WORLD,
+				&t.transform[0][0],
+				NULL,
+				NULL)) {
 				n->transform = inverse(parentTransform) * t;
 				scene->SetDirty();
 			}
 		}
 	}
 
-	inline void PostRender(CommandContext& context, const SceneRendererArgs& renderData) {
+	inline void PostRender(CommandContext& context, const ImageView& renderTarget, const ImageView& vbuffer) {
 		const auto& instanceNodes = scene->renderData.instanceNodes;
 
 		if (auto n = selected.lock(); n && n->mesh && n->material) {
@@ -176,11 +183,9 @@ public:
 						outlinePipeline = Pipeline::CreateCompute(context.GetDevice(), ShaderModule::Create(context.GetDevice(), FindShaderPath("Outline.cs.slang")));
 					}
 
-					const ImageView& renderTarget = renderData.GetAttachment("renderTarget");
-
 					ShaderParameter params = {};
 					params["color"]      = ImageParameter{renderTarget, vk::ImageLayout::eGeneral};
-					params["visibility"] = ImageParameter{renderData.GetAttachment("visibility"), vk::ImageLayout::eShaderReadOnlyOptimal};
+					params["visibility"] = ImageParameter{vbuffer, vk::ImageLayout::eShaderReadOnlyOptimal};
 					params["highlightColor"] = float3(1, 0.9f, 0.2f);
 					params["selected"] = idx;
 					context.Dispatch(*outlinePipeline, renderTarget.Extent(), params);
@@ -188,9 +193,7 @@ public:
 			}
 		}
 
-		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowFocused() && !ImGuizmo::IsUsing()) {
-			const ImageView& vbuffer = renderData.GetAttachment("visibility");
-
+		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowFocused() && ImGui::IsWindowHovered() && !ImGuizmo::IsUsing()) {
 			// copy selected pixel from visibility buffer into host-visible buffer
 			float4 rect;
 			ImGuizmo::GetRect(&rect.x);
@@ -215,7 +218,7 @@ public:
 					.bufferOffset = 0,
 					.bufferRowLength = 0,
 					.bufferImageHeight = 0,
-					.imageSubresource = vbuffer.GetSubresourceLayer(),
+					.imageSubresource = vk::ImageSubresourceLayers{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
 					.imageOffset = vk::Offset3D{ cursor.x, cursor.y, 0 },
 					.imageExtent = vk::Extent3D{ 1, 1, 1 } });
 

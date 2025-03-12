@@ -2,6 +2,7 @@
 
 #include <stack>
 
+#include <Rose/Core/CommandContext.hpp>
 #include "SceneNode.hpp"
 
 namespace RoseEngine {

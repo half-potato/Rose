@@ -1,7 +1,11 @@
-import Rose.Render.GBuffer;
 import Rose.Scene.Scene;
 
 using namespace RoseEngine;
+
+struct GBuffer {
+    float4 color: SV_Target0;
+    uint4  visibility: SV_Target1;
+};
 
 uniform Transform worldToCamera;
 uniform Transform projection;

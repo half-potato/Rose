@@ -2,41 +2,40 @@
 
 #include <stack>
 
-#include <Rose/Render/ViewportWidget.hpp>
 #include <Rose/Scene/Scene.hpp>
 
 namespace RoseEngine {
 
 ref<SceneNode> LoadGLTF(CommandContext& context, const std::filesystem::path& filename);
 
-struct SceneRendererArgs {
-	std::vector<std::pair<std::string, ImageView>> attachments;
-
-	Transform cameraToWorld;
-	Transform worldToCamera;
-	Transform projection;
-
-	uint2  renderExtent;
-	bool   viewportFocused;
-	float4 viewportRect;
-
-	inline const ImageView& GetAttachment(const std::string& name) const {
-		return std::ranges::find(attachments, name, &std::pair<std::string, ImageView>::first)->second;
-	}
-};
-
 class SceneRenderer {
+public:
+	using AttachmentInfo = std::tuple<std::string, vk::Format, vk::ClearValue>;
+	inline static const std::array<AttachmentInfo, 3> kRenderAttachments = {
+		AttachmentInfo{ "renderTarget", vk::Format::eR8G8B8A8Unorm,    vk::ClearValue{vk::ClearColorValue(0.f,0.f,0.f,1.f)} },
+		AttachmentInfo{ "visibility",   vk::Format::eR32G32B32A32Uint, vk::ClearValue{vk::ClearColorValue(~0u,~0u,~0u,~0u)} },
+		AttachmentInfo{ "depthBuffer",  vk::Format::eD32Sfloat,        vk::ClearValue{vk::ClearDepthStencilValue{1.f, 0}} },
+	};
+
 private:
 	TupleMap<ref<Pipeline>, MeshLayout, MaterialFlags, bool> cachedPipelines = {};
 	ref<vk::raii::Sampler> cachedSampler = nullptr;
 	ref<const ShaderModule> vertexShader, vertexShaderTextured, fragmentShader, fragmentShaderTextured, fragmentShaderTexturedAlphaCutoff;
 	ref<Pipeline> pathTracer = nullptr;
 
+	std::vector<ImageView> attachments;
 	ref<DescriptorSets> descriptorSets = {};
+	struct ViewportParams {
+		Transform cameraToWorld;
+		Transform worldToCamera;
+		Transform projection;
+	};
+	ViewportParams viewData;
+
 
 	ref<Scene> scene = nullptr;
 
-	inline const auto& GetPipeline(Device& device, const SceneRendererArgs& renderData, const Mesh& mesh, const Material<ImageView>& material) {
+	inline const auto& GetPipeline(Device& device, const Mesh& mesh, const Material<ImageView>& material) {
 		if (!vertexShader || (ImGui::IsKeyPressed(ImGuiKey_F5, false) && vertexShader->IsStale())) {
 			if (vertexShader) device.Wait();
 			vertexShader                      = ShaderModule::Create(device, FindShaderPath("Visibility.3d.slang"), "vertexMain");
@@ -73,8 +72,7 @@ private:
 		// get vertex buffer bindings from the mesh layout
 
 		DynamicRenderingState renderState;
-		for (const auto&[name, attachment] : renderData.attachments) {
-			const vk::Format format = attachment.GetImage()->Info().format;
+		for (const auto&[name, format, clearValue] : kRenderAttachments) {
 			if (IsDepthStencil(format))
 				renderState.depthFormat = format;
 			else
@@ -128,46 +126,93 @@ private:
 public:
 	inline void SetScene(const ref<Scene>& s) { scene = s; }
 
-	inline void PreRender(CommandContext& context, SceneRendererArgs& renderData) {
-		if (!scene || !scene->sceneRoot) return;
-
-		scene->PreRender(context, [&](Device& device, const Mesh& mesh, const Material<ImageView>& material) {
-			return GetPipeline(device, renderData, mesh, material);
-		});
-
-		ShaderParameter params = {};
-		params["scene"]         = scene->renderData.sceneParameters;
-		params["worldToCamera"] = renderData.worldToCamera;
-		params["projection"]    = renderData.projection;
-
-		// all pipelines should have the same descriptor set layouts
-		descriptorSets = context.GetDescriptorSets(*cachedPipelines.begin()->second->Layout());
-		context.UpdateDescriptorSets(*descriptorSets, params, *cachedPipelines.begin()->second->Layout());
+	inline const ImageView& GetAttachment(const uint32_t index) const {
+		return attachments[index];
 	}
 
-	inline void Render(CommandContext& context, const SceneRendererArgs& renderData) {
-		if (!scene || !scene->sceneRoot) return;
-
-		const Pipeline* p = nullptr;
-		for (const auto& drawList : scene->renderData.drawLists) {
-			for (const auto&[pipeline, mesh, meshLayout, draws] : drawList) {
-				if (p != pipeline) {
-					context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***pipeline);
-					context.BindDescriptors(*pipeline->Layout(), *descriptorSets);
-					p = pipeline;
+	inline void PreRender(CommandContext& context, const uint2 extent, const Transform& cameraToWorld, const Transform& projection) {
+		if (attachments.empty() || (uint2)attachments[0].Extent() != extent) {
+			context.GetDevice().Wait();
+			attachments.clear();
+			// create attachments
+			for (const auto&[name, format, clearValue] : kRenderAttachments) {
+				ImageView attachment;
+				if (IsDepthStencil(format)) {
+					attachment = ImageView::Create(
+						Image::Create(context.GetDevice(), ImageInfo{
+							.format = format,
+							.extent = uint3(extent, 1),
+							.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eDepthStencilAttachment,
+							.queueFamilies = { context.QueueFamily() } }),
+						vk::ImageSubresourceRange{
+							.aspectMask = vk::ImageAspectFlagBits::eDepth,
+							.baseMipLevel = 0,
+							.levelCount = 1,
+							.baseArrayLayer = 0,
+							.layerCount = 1 });
+				} else {
+					attachment = ImageView::Create(
+						Image::Create(context.GetDevice(), ImageInfo{
+							.format = format,
+							.extent = uint3(extent, 1),
+							.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eColorAttachment,
+							.queueFamilies = { context.QueueFamily() } }));
 				}
-
-				mesh->Bind(context, meshLayout);
-
-				const uint32_t indexCount = mesh->indexBuffer.size_bytes() / mesh->indexSize;
-				for (const auto&[firstInstance, instanceCount] : draws) {
-					context->drawIndexed(indexCount, instanceCount, 0, 0, firstInstance);
-				}
+				attachments.emplace_back(attachment);
 			}
+		}
+
+		viewData.cameraToWorld = cameraToWorld;
+		viewData.worldToCamera = inverse(cameraToWorld);
+		viewData.projection = projection;
+
+		if (scene && scene->sceneRoot) {
+			scene->PreRender(context, [&](Device& device, const Mesh& mesh, const Material<ImageView>& material) { return GetPipeline(device, mesh, material); });
+
+			ShaderParameter params = {};
+			params["scene"]         = scene->renderData.sceneParameters;
+			params["worldToCamera"] = viewData.worldToCamera;
+			params["projection"]    = viewData.projection;
+
+			// all pipelines should have the same descriptor set layouts
+			descriptorSets = context.GetDescriptorSets(*cachedPipelines.begin()->second->Layout());
+			context.UpdateDescriptorSets(*descriptorSets, params, *cachedPipelines.begin()->second->Layout());
+		} else {
+			descriptorSets = {};
 		}
 	}
 
-	inline void PostRender(CommandContext& context, const SceneRendererArgs& renderData) {
+	inline void Render(CommandContext& context) {
+		context.BeginRendering({
+			{ attachments[0], std::get<vk::ClearValue>(kRenderAttachments[0]) },
+			{ attachments[1], std::get<vk::ClearValue>(kRenderAttachments[1]) },
+			{ attachments[2], std::get<vk::ClearValue>(kRenderAttachments[2]) },
+		});
+
+		if (descriptorSets) {
+			const Pipeline* p = nullptr;
+			for (const auto& drawList : scene->renderData.drawLists) {
+				for (const auto&[pipeline, mesh, meshLayout, draws] : drawList) {
+					if (p != pipeline) {
+						context->bindPipeline(vk::PipelineBindPoint::eGraphics, ***pipeline);
+						context.BindDescriptors(*pipeline->Layout(), *descriptorSets);
+						p = pipeline;
+					}
+
+					mesh->Bind(context, meshLayout);
+
+					const uint32_t indexCount = mesh->indexBuffer.size_bytes() / mesh->indexSize;
+					for (const auto&[firstInstance, instanceCount] : draws) {
+						context->drawIndexed(indexCount, instanceCount, 0, 0, firstInstance);
+					}
+				}
+			}
+		}
+
+		context.EndRendering();
+	}
+
+	inline void PostRender(CommandContext& context) {
 		if (!scene || !scene->sceneRoot || scene->renderData.drawLists.empty()) return;
 		if (!pathTracer || (ImGui::IsKeyPressed(ImGuiKey_F5, false) && pathTracer->GetShader()->IsStale())) {
 			if (pathTracer) context.GetDevice().Wait();
@@ -179,16 +224,17 @@ public:
 					.immutableSamplers = { { "scene.sampler", { cachedSampler } } } });
 		}
 
-		ImageView renderTarget = renderData.GetAttachment("renderTarget");
+		const ImageView& renderTarget = attachments[0];
+		const ImageView& visibility   = attachments[1];
 
 		ShaderParameter params = {};
 		params["scene"] = scene->renderData.sceneParameters;
-		params["renderTarget"] = ImageParameter{ .image = renderTarget                          , .imageLayout = vk::ImageLayout::eGeneral };
-		params["visibility"]   = ImageParameter{ .image = renderData.GetAttachment("visibility"), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-		params["worldToCamera"] = renderData.worldToCamera;
-		params["cameraToWorld"] = renderData.cameraToWorld;
-		params["projection"]    = renderData.projection;
-		params["inverseProjection"] = inverse(renderData.projection);
+		params["renderTarget"] = ImageParameter{ .image = renderTarget, .imageLayout = vk::ImageLayout::eGeneral };
+		params["visibility"]   = ImageParameter{ .image = visibility, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		params["worldToCamera"] = viewData.worldToCamera;
+		params["cameraToWorld"] = viewData.cameraToWorld;
+		params["projection"]    = viewData.projection;
+		params["inverseProjection"] = inverse(viewData.projection);
 		params["imageSize"] = uint2(renderTarget.Extent());
 		params["seed"] = (uint32_t)context.GetDevice().NextTimelineSignal();
 		context.Dispatch(*pathTracer, renderTarget.Extent(), params);

@@ -1,4 +1,5 @@
 #include <Rose/Core/WindowedApp.hpp>
+#include <Rose/Render/ViewportCamera.hpp>
 #include <Rose/Render/SceneRenderer/SceneRenderer.hpp>
 #include <Rose/Render/SceneRenderer/SceneEditor.hpp>
 
@@ -23,28 +24,17 @@ int main(int argc, const char** argv) {
 	sceneRenderer->SetScene(scene);
 	sceneEditor->SetScene(scene);
 
-	ViewportWidget<SceneRendererArgs, SceneRenderer, SceneEditor> viewport(
-		{ // attachments
-			{ "renderTarget", vk::Format::eR8G8B8A8Unorm,    vk::ClearValue{vk::ClearColorValue(0.f,0.f,0.f,1.f)} },
-			{ "visibility",   vk::Format::eR32G32B32A32Uint, vk::ClearValue{vk::ClearColorValue(~0u,~0u,~0u,~0u)} },
-			{ "depthBuffer",  vk::Format::eD32Sfloat,        vk::ClearValue{vk::ClearDepthStencilValue{1.f, 0}} },
-		},
-		{ // renderers
-			sceneRenderer,
-			sceneEditor
-		}
-	);
+	ViewportCamera camera = {};
 
 	app.AddMenuItem("File", [&]() {
-		if (ImGui::MenuItem("Open scene")) {
+		if (ImGui::MenuItem("Open scene") || (ImGui::IsKeyDown(ImGuiKey_ModCtrl) && ImGui::IsKeyPressed(ImGuiKey_O), false)) {
 			scene->LoadDialog(app.CurrentContext());
 		}
 	});
-	app.AddWidget("Renderers", [&]() { viewport.InspectorWidget(app.CurrentContext()); }, true);
+	app.AddWidget("Renderers", [&]() { sceneEditor->InspectorWidget(app.CurrentContext()); }, true);
 
-	SceneRendererArgs renderData;
 	app.AddWidget("Viewport", [&]() {
-		viewport.Update(app.dt);
+		camera.Update(app.dt);
 
 		const float2 extentf = std::bit_cast<float2>(ImGui::GetWindowContentRegionMax()) - std::bit_cast<float2>(ImGui::GetWindowContentRegionMin());
 		const uint2 extent = extentf;
@@ -52,57 +42,31 @@ int main(int argc, const char** argv) {
 
 		CommandContext& context = app.CurrentContext();
 
-		{
-			if (renderData.renderExtent != extent) {
-				context.GetDevice().Wait();
-				renderData.attachments.clear();
-				for (const auto&[name, format, clearValue] : viewport.AttachmentInfos()) {
-					ImageView attachment;
-					if (IsDepthStencil(format)) {
-						attachment = ImageView::Create(
-							Image::Create(context.GetDevice(), ImageInfo{
-								.format = format,
-								.extent = uint3(extent, 1),
-								.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eDepthStencilAttachment,
-								.queueFamilies = { context.QueueFamily() } }),
-							vk::ImageSubresourceRange{
-								.aspectMask = vk::ImageAspectFlagBits::eDepth,
-								.baseMipLevel = 0,
-								.levelCount = 1,
-								.baseArrayLayer = 0,
-								.layerCount = 1 });
-					} else {
-						attachment = ImageView::Create(
-							Image::Create(context.GetDevice(), ImageInfo{
-								.format = format,
-								.extent = uint3(extent, 1),
-								.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eColorAttachment,
-								.queueFamilies = { context.QueueFamily() } }));
-					}
-					renderData.attachments.emplace_back(name, attachment);
-				}
+		const Transform cameraToWorld = camera.GetCameraToWorld();
+		const Transform projection    = camera.GetProjection(extent.x / (float)extent.y);
 
-				renderData.renderExtent = extent;
-			}
+		sceneRenderer->PreRender(context, extent, cameraToWorld, projection);
+		sceneEditor->PreRender(context, inverse(cameraToWorld), projection);
 
-			renderData.cameraToWorld = viewport.Camera().GetCameraToWorld();
-			renderData.worldToCamera = inverse(renderData.cameraToWorld);
-			renderData.projection = viewport.Camera().GetProjection(extent.x / (float)extent.y);
-		}
 
-		ImGui::Image(Gui::GetTextureID(renderData.GetAttachment("renderTarget"), vk::Filter::eNearest), std::bit_cast<ImVec2>(extentf));
+		const ImageView& renderTarget = sceneRenderer->GetAttachment(0);
+		const ImageView& visibility   = sceneRenderer->GetAttachment(1);
 
-		// ImGuizmo viewport
+		ImGui::Image(Gui::GetTextureID(renderTarget, vk::Filter::eNearest), std::bit_cast<ImVec2>(extentf));
+
 		const float2 viewportMin = std::bit_cast<float2>(ImGui::GetItemRectMin());
 		const float2 viewportMax = std::bit_cast<float2>(ImGui::GetItemRectMax());
+		const float4 viewportRect = float4(viewportMin, viewportMax - viewportMin);
+
+		// ImGuizmo viewport
 		ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y);
 		ImGuizmo::SetID(0);
 
-		renderData.viewportFocused = ImGui::IsItemFocused();
-		renderData.viewportRect = float4(viewportMin, viewportMax - viewportMin);
+		sceneRenderer->Render(context);
 
-		viewport.Render(context, renderData, [&](const std::string& name){ return renderData.GetAttachment(name); });
-	}, true);
+		sceneRenderer->PostRender(context);
+		sceneEditor->PostRender(context, renderTarget, visibility);
+	}, true, WindowedApp::WidgetFlagBits::eNoBorders);
 
 	app.AddWidget("Scene graph", [&]() { sceneEditor->SceneGraphWidget(); }, true);
 	app.AddWidget("Tools", [&]()       { sceneEditor->ToolsWidget(); }, true);
