@@ -181,6 +181,9 @@ public:
 	inline       vk::raii::BufferView* operator->()       { return mBufferView.get(); }
 	inline const vk::raii::BufferView* operator->() const { return mBufferView.get(); }
 
+	inline BufferView::size_type size() const { return mBuffer.size(); }
+	inline BufferView::size_type size_bytes() const { return mBuffer.size_bytes(); }
+
 	inline BufferView GetBuffer() const { return mBuffer; }
 	inline vk::Format Format() const { return mFormat; }
 };
