@@ -38,6 +38,14 @@ void CommandContext::Begin() {
 			std::ranges::sort(bufs, {}, &CachedData::CachedBuffers::size);
 	}
 
+	if (!mCache.mNewImages.empty()) {
+		for (auto&[info, images] : mCache.mNewImages) {
+			for (auto& image : images)
+				mCache.mImages[info].emplace_back(std::move(image));
+			images.clear();
+		}
+	}
+
 	if (!mCache.mNewDescriptorSets.empty()) {
 		for (auto&[layout, sets] : mCache.mNewDescriptorSets)
 			for (auto& s : sets)
@@ -158,6 +166,22 @@ ref<DescriptorSets> CommandContext::GetDescriptorSets(const PipelineLayout& pipe
 
 	return descriptorSets;
 }
+
+ref<Image> CommandContext::GetTransientImage(const ImageInfo& info) {
+	ref<Image> image = {};
+	if (auto it_ = mCache.mImages.find(info); it_ != mCache.mImages.end()) {
+		auto& q = it_->second;
+		if (!q.empty()) {
+			image = std::move(q.back());
+			q.pop_back();
+		}
+	}
+
+	if (!image) image = Image::Create(GetDevice(), info);
+
+	return mCache.mNewImages[info].emplace_back(image);
+}
+
 
 uint32_t align16(uint32_t s) {
 	s = (s + 3)&(~3);

@@ -106,6 +106,10 @@ private:
 		};
 		std::unordered_map<vk::BufferUsageFlags, std::vector<CachedBuffers>> mBuffers = {};
 		std::unordered_map<vk::BufferUsageFlags, std::vector<CachedBuffers>> mNewBuffers = {};
+
+
+		std::unordered_map<ImageInfo, std::vector<ref<Image>>> mImages = {};
+		std::unordered_map<ImageInfo, std::vector<ref<Image>>> mNewImages = {};
 	};
 	CachedData mCache = {};
 
@@ -319,7 +323,7 @@ public:
 	}
 
 	template<typename T = std::byte>
-	inline BufferRange<T> GetTransientBuffer(size_t count, vk::BufferUsageFlags usage) {
+	inline BufferRange<T> GetTransientBuffer(const size_t count, const vk::BufferUsageFlags usage) {
 		const size_t size = sizeof(T) * count;
 
 		BufferView hostBuffer = {};
@@ -338,8 +342,8 @@ public:
 		}
 
 		if (!buffer || buffer.size() < size) {
-			buffer = Buffer::Create
-				(*mDevice,
+			buffer = Buffer::Create(
+				*mDevice,
 				size,
 				usage,
 				vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -349,6 +353,18 @@ public:
 		}
 
 		return mCache.mNewBuffers[usage].emplace_back(hostBuffer, buffer).buffer;
+	}
+
+	ref<Image> GetTransientImage(const ImageInfo& info);
+	inline ref<Image> GetTransientImage(const uint3 extent, const vk::Format format, const vk::ImageUsageFlags usage, const uint32_t mipLevels = 1, const uint32_t arrayLayers = 1) {
+		return GetTransientImage(ImageInfo {
+			.format = format,
+			.extent = extent,
+			.mipLevels = mipLevels,
+			.arrayLayers = arrayLayers,
+			.usage = usage,
+			.queueFamilies = { QueueFamily() }
+		});
 	}
 
 	// Copies data to a host-visible buffer

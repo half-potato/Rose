@@ -359,6 +359,8 @@ struct ImageInfo {
 	vk::ImageTiling         tiling        = vk::ImageTiling::eOptimal;
 	vk::SharingMode         sharingMode   = vk::SharingMode::eExclusive;
 	std::vector<uint32_t>   queueFamilies = {};
+
+	inline bool operator==(const ImageInfo& rhs) const = default;
 };
 
 class Image {
@@ -502,6 +504,24 @@ struct ImageView {
 }
 
 namespace std {
+
+template<>
+struct hash<RoseEngine::ImageInfo> {
+	inline size_t operator()(const RoseEngine::ImageInfo& v) const {
+		return RoseEngine::HashArgs(
+			v.createFlags,
+			v.type,
+			v.format,
+			v.extent.x, v.extent.y, v.extent.z,
+			v.mipLevels,
+			v.arrayLayers,
+			v.samples,
+			v.usage,
+			v.tiling,
+			v.sharingMode,
+			RoseEngine::HashRange(v.queueFamilies) );
+	}
+};
 
 template<>
 struct hash<RoseEngine::ImageView> {
