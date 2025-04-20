@@ -9,6 +9,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 set(ROSE_ENABLE_TESTING ON CACHE BOOL "Build tests")
 set(ROSE_BUILD_APPS     ON CACHE BOOL "Build default applications")
+set(SLANG_BUILD_DIR     "" CACHE PATH "Optional path to Slang build directory containing bin/ include/ and lib/. If empty, the Vulkan SDK Slang will be used instead.")
 
 # Find dependencies
 
@@ -25,6 +26,7 @@ add_subdirectory(thirdparty/glfw)
 add_subdirectory(thirdparty/glm)
 
 # RoseLib target
+
 file(GLOB_RECURSE CORE_SRCS  "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.cpp")
 file(GLOB_RECURSE CORE_HPP   "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.hpp")
 file(GLOB_RECURSE CORE_H     "${CMAKE_CURRENT_SOURCE_DIR}/src/Rose/**.h")
@@ -59,12 +61,22 @@ target_include_directories(RoseLib
         ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
 )
 
-target_link_directories(RoseLib PUBLIC $ENV{VULKAN_SDK}/Lib)
-
-target_link_libraries(RoseLib Vulkan::Vulkan)
-target_link_libraries(RoseLib glm glfw slang)
-
+target_link_libraries(RoseLib Vulkan::Vulkan glm glfw slang)
 target_include_directories(RoseLib PRIVATE thirdparty/glfw/include thirdparty/glfw/deps)
+
+# Link slang
+
+if(EXISTS ${SLANG_BUILD_DIR})
+	target_include_directories(RoseLib PUBLIC ${SLANG_BUILD_DIR}/include)
+	target_link_directories(RoseLib PUBLIC ${SLANG_BUILD_DIR}/lib)
+	configure_file("${SLANG_BUILD_DIR}/bin/slang.dll" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang.dll" COPYONLY)
+	configure_file("${SLANG_BUILD_DIR}/bin/slang.pdb" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang.pdb" COPYONLY)
+else()
+	target_include_directories(RoseLib PUBLIC $ENV{VULKAN_SDK}/include/slang)
+	target_link_directories(RoseLib PUBLIC $ENV{VULKAN_SDK}/Lib)
+endif()
+
+# Platform options/defines
 
 if(UNIX)
     target_link_libraries(RoseLib pthread ${CMAKE_DL_LIBS} xcb xcb-keysyms)
@@ -81,6 +93,8 @@ elseif(WIN32)
 		NOMINMAX
 	)
     target_compile_options(RoseLib PUBLIC /bigobj /MP)
+else()
+	message(FATAL_ERROR "Unsupported platform")
 endif()
 
 # Optional dependencies
@@ -121,5 +135,6 @@ endif()
 # misc
 
 configure_file("${CMAKE_CURRENT_LIST_DIR}/thirdparty/imgui/misc/fonts/DroidSans.ttf" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DroidSans.ttf" COPYONLY)
+
 
 install(TARGETS RoseLib FILE_SET HEADERS)

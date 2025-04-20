@@ -1,7 +1,7 @@
 #include "ShaderModule.hpp"
 #include "Hash.hpp"
 
-#include <slang/slang.h>
+#include <slang.h>
 #include <portable-file-dialogs.h>
 
 #include <stdio.h>

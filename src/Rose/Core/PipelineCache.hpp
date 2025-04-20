@@ -113,6 +113,10 @@ public:
 		return p;
 	}
 
+	inline void operator()(CommandContext& context, const uint3 extent, const ShaderParameter& params, const ShaderDefines& defines = {}, const PipelineInfo& pipelineInfo = ComputePipelineInfo{}) {
+        context.Dispatch(*get(context.GetDevice(), defines, pipelineInfo), extent, params);
+	}
+
 private:
 	std::unordered_map<CacheKey, ref<Pipeline>, CacheKeyHasher> cachedPipelines;
 	std::vector<std::unordered_map<ShaderDefines, ref<ShaderModule>>> cachedShaders;
