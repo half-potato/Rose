@@ -41,6 +41,8 @@ target_sources(RoseLib
 		${IMGUI_SRCS}
 		thirdparty/ImGuizmo.cpp
 		thirdparty/imnodes.cpp
+		thirdparty/implot_items.cpp
+		thirdparty/implot.cpp
 		thirdparty/miniz.c
 		thirdparty/pugixml.cpp
 		thirdparty/tinyply.cpp
