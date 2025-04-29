@@ -59,17 +59,15 @@ public:
 
 
 	inline const ref<ShaderModule>& getShader(Device& device, const uint32_t index, const ShaderDefines& defines = {}) {
-		if (auto it = cachedShaders[index].find(defines); it != cachedShaders[index].end()) {
-			// shader hot reload
-			if (ImGui::IsKeyPressed(ImGuiKey_F5, false) && it->second->IsStale()) {
-				cachedShaders[index].erase(it);
-			} else {
-				return it->second;
-			}
-		}
+		ref<ShaderModule>& shader = cachedShaders[index][defines];
 
-		auto shader = ShaderModule::Create(device, stages[index].path, stages[index].entry, "sm_6_7", defines);
-		return cachedShaders[index].emplace(defines, shader).first->second;
+		// shader hot reload
+		if (shader && ImGui::IsKeyPressed(ImGuiKey_F5, false) && shader->IsStale())
+			shader = {};
+
+		if (!shader) shader = ShaderModule::Create(device, stages[index].path, stages[index].entry, "sm_6_7", defines);
+
+		return shader;
 	}
 
 
