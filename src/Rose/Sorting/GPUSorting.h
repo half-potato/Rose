@@ -12,8 +12,8 @@ namespace GPUSorting
 {
     struct DeviceInfo
     {
-        std::wstring Description;
-        std::wstring SupportedShaderModel;
+        std::string Description;
+        std::string SupportedShaderModel;
         uint32_t deviceId;
         uint32_t vendorId;
         uint32_t SIMDWidth;

@@ -912,14 +912,12 @@ namespace Tuner
             break;
         }
 
-#ifdef _DEBUG
         printf("\nTuning Parameters: \n");
         printf("ShouldLockWaves: %u\n", tuningParams.shouldLockWavesTo32);
         printf("KeysPerThread: %u\n", tuningParams.keysPerThread);
         printf("ThreadsPerThreadBlock: %u\n", tuningParams.threadsPerThreadblock);
         printf("PartitionSize: %u\n", tuningParams.partitionSize);
         printf("TotalSharedMemory: %u\n\n", tuningParams.totalSharedMemory);
-#endif
 
         return tuningParams;
     }

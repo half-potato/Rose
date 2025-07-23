@@ -29,6 +29,7 @@ groupshared uint g_scan[SCAN_DIM];  //Shared memory for the scan
 //INIT KERNEL
 //*****************************************************************************
 //Clear the global histogram, as we will be adding to it atomically
+[shader("compute")]
 [numthreads(1024, 1, 1)]
 void InitDeviceRadixSort(int3 id : SV_DispatchThreadID)
 {
@@ -149,6 +150,7 @@ inline void GlobalHistExclusiveScanWLT16(uint gtid)
     }
 }
 
+[shader("compute")]
 [numthreads(US_DIM, 1, 1)]
 void Upsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
@@ -406,6 +408,7 @@ inline void ExclusiveThreadBlockScanWLT16(uint gtid, uint gid)
 }
 
 //Scan does not need flattening of gids
+[shader("compute")]
 [numthreads(SCAN_DIM, 1, 1)]
 void Scan(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {
@@ -432,6 +435,7 @@ inline void LoadThreadBlockReductions(uint gtid, uint gid, uint exclusiveHistRed
 #if LOCK_TO_W32
 [WaveSize(32)]
 #endif
+[shader("compute")]
 [numthreads(D_DIM, 1, 1)]
 void Downsweep(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 {

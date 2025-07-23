@@ -22,10 +22,15 @@
 #define RADIX_LOG           8U      //log2(RADIX)
 #define RADIX_PASSES        4U      //(Key width) / RADIX_LOG
 
-#include "RadixSort.h"
+struct DeviceRadixSortPushConstants {
+    uint numKeys;
+    uint radixShift;
+    uint threadBlocks;
+    uint isPartial;
+};
 
 [[vk::push_constant]]
-ConstantBuffer<RadixSortPushConstants> e;
+ConstantBuffer<DeviceRadixSortPushConstants> e;
 
 #if defined(KEY_UINT)
 RWStructuredBuffer<uint> b_sort         : register(u0);
@@ -84,7 +89,7 @@ inline uint getWaveIndex(uint gtid)
 
 inline bool isPartialDispatch()
 {
-    return e.isPartial & 1;
+    return (bool)(e.isPartial & 1);
 }
 
 inline uint flattenGid(uint3 gid)
@@ -140,7 +145,7 @@ inline uint ExtractPackedIndex(uint key)
 
 inline uint ExtractPackedShift(uint key)
 {
-    return (key >> e.radixShift & 1) ? 16 : 0;
+    return ((bool)(key >> e.radixShift & 1)) ? 16 : 0;
 }
 
 inline uint ExtractPackedValue(uint packed, uint key)
@@ -290,7 +295,7 @@ inline KeyStruct LoadKeysPartialWLT16(uint gtid, uint partIndex, uint serialIter
 
 inline uint WaveFlagsWGE16()
 {
-    return (WaveGetLaneCount() & 31) ?
+    return ((bool)(WaveGetLaneCount() & 31)) ?
         (1U << WaveGetLaneCount()) - 1 : 0xffffffff;
 }
 
@@ -317,7 +322,7 @@ inline void WarpLevelMultiSplitWLT16(uint key, inout uint waveFlags)
     for (uint k = 0; k < RADIX_LOG; ++k)
     {
         const bool t = key >> (k + e.radixShift) & 1;
-        waveFlags &= (t ? 0 : 0xffffffff) ^ (uint) WaveActiveBallot(t);
+        waveFlags &= (t ? 0 : 0xffffffff) ^ (uint) WaveActiveBallot(t).x;
     }
 }
 
