@@ -26,8 +26,9 @@ static const float M_SQRT3             = 1.732050807568877293527;  // sqrt(3)
 static const float M_SQRTPI            = 1.77245385090551602730;   // sqrt(pi)
 static const float M_1_SQRT2           = 0.707106781186547524401;  // 1/sqrt(2)
 
-float2x2 inverse(float2x2 m) {
-	const float invdet = 1 / determinant(m);
+[Differentiable]
+float2x2 inverse(float2x2 m, float det) {
+	float invdet = 1 / det;
     float2x2 r;
     r[0][0]  = m[1][1] * invdet;
     r[1][1]  = m[0][0] * invdet;
@@ -36,8 +37,14 @@ float2x2 inverse(float2x2 m) {
     return r;
 }
 
-float3x3 inverse(float3x3 m) {
-	float invdet = 1 / determinant(m);
+[Differentiable]
+float2x2 inverse(float2x2 m) {
+    return inverse(m, determinant(m));
+}
+
+[Differentiable]
+float3x3 inverse(float3x3 m, float det) {
+	float invdet = 1 / det;
     float3x3 r;
     r[0][0] = (m[1][1] * m[2][2] - m[2][1] * m[1][2]) * invdet;
     r[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * invdet;
@@ -49,6 +56,12 @@ float3x3 inverse(float3x3 m) {
     r[2][1] = (m[2][0] * m[0][1] - m[0][0] * m[2][1]) * invdet;
     r[2][2] = (m[0][0] * m[1][1] - m[1][0] * m[0][1]) * invdet;
     return r;
+}
+
+
+[Differentiable]
+float3x3 inverse(float3x3 m) {
+    return inverse(m, determinant(m));
 }
 
 #include "MathUtils.h"

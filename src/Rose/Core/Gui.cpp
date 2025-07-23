@@ -8,6 +8,7 @@
 #include <imgui/imgui_spectrum.h>
 #include <ImGuizmo.h>
 #include <imnodes.h>
+#include <implot.h>
 
 namespace RoseEngine {
 
@@ -173,6 +174,7 @@ void Gui::Initialize(CommandContext& context, const Window& window, const Swapch
 	mDevice = device;
 
 	ImGui::CreateContext();
+	ImPlot::CreateContext();
 	ImNodes::CreateContext();
 	ImNodes::LoadCurrentEditorStateFromIniFile("imnodes.ini");
 
@@ -265,6 +267,7 @@ void Gui::Destroy() {
 		ImGui_ImplVulkan_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
 		ImNodes::DestroyContext();
+		ImPlot::DestroyContext();
 		ImGui::DestroyContext();
 		mRenderPass.clear();
 		mFramebuffers.clear();

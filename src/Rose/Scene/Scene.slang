@@ -8,6 +8,9 @@ __exported import Transform;
 namespace RoseEngine {
 
 struct Scene {
+    static const uint kMaxVertexBuffers = 1024;
+    static const uint kMaxImages = 1024;
+
 	StructuredBuffer<InstanceHeader> instances;
 	StructuredBuffer<Transform>      transforms;
 	StructuredBuffer<Transform>      inverseTransforms;
@@ -15,8 +18,8 @@ struct Scene {
 	StructuredBuffer<Material>       materials;
 	RaytracingAccelerationStructure  accelerationStructure;
 	SamplerState                     sampler;
-	ByteAddressBuffer                meshBuffers[1024];
-    Texture2D<float4>                images[1024];
+	ByteAddressBuffer                meshBuffers[kMaxVertexBuffers];
+    Texture2D<float4>                images[kMaxImages];
 
     float3 backgroundColor;
     uint   backgroundImage;
@@ -152,14 +155,20 @@ struct Scene {
         return v;
 	}
 
-    Vertex TransformVertex(InstanceHeader instance, const Vertex vertex) {
-        Vertex v = vertex;
-        v.position = transforms[instance.transformIndex].TransformPoint(v.position);
+    void TransformVertex(const InstanceHeader instance, inout Vertex vertex) {
+        vertex.position = transforms[instance.transformIndex].TransformPoint(vertex.position);
         const Transform nt = transpose(inverseTransforms[instance.transformIndex]);
-        v.faceNormal    = normalize(nt.TransformVector(v.faceNormal));
-        v.shadingNormal = normalize(nt.TransformVector(v.shadingNormal));
-        v.tangent.xyz   = normalize(nt.TransformVector(v.tangent.xyz));
-        return v;
+        vertex.faceNormal    = normalize(nt.TransformVector(vertex.faceNormal));
+        vertex.shadingNormal = normalize(nt.TransformVector(vertex.shadingNormal));
+        vertex.tangent.xyz   = normalize(nt.TransformVector(vertex.tangent.xyz));
+	}
+
+    float3 EvalBackground(const float3 dir) {
+        float3 c = backgroundColor;
+        if (backgroundImage < kMaxImages) {
+            c *= SampleImageUniform(backgroundImage, xyz2sphuv(dir)).rgb;
+        }
+        return c;
 	}
 };
 

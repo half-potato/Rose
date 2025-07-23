@@ -7,28 +7,6 @@
 
 namespace RoseEngine {
 
-inline bool TransformGizmoGui(
-	Transform& transform,
-	const Transform& view,
-	const Transform& projection,
-	ImGuizmo::OPERATION operation = ImGuizmo::OPERATION::TRANSLATE,
-	bool local = false,
-	std::optional<float3> snap = std::nullopt) {
-	float4x4 t = transform.transform;
-	float4x4 v = view.transform;
-	float4x4 p = projection.transform;
-	const bool changed = ImGuizmo::Manipulate(
-		&v[0][0],
-		&p[0][0],
-		operation,
-		local ? ImGuizmo::MODE::LOCAL : ImGuizmo::MODE::WORLD,
-		&t[0][0],
-		NULL,
-		snap.has_value() ? &snap->x : NULL);
-	if (changed) transform.transform = t;
-	return changed;
-}
-
 inline bool InspectorGui(Transform& v) {
 	bool changed = false;
 	float4x4 tmp = transpose(v.transform);

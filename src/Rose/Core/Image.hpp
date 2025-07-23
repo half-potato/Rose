@@ -359,6 +359,8 @@ struct ImageInfo {
 	vk::ImageTiling         tiling        = vk::ImageTiling::eOptimal;
 	vk::SharingMode         sharingMode   = vk::SharingMode::eExclusive;
 	std::vector<uint32_t>   queueFamilies = {};
+
+	inline bool operator==(const ImageInfo& rhs) const = default;
 };
 
 class Image {
@@ -471,7 +473,7 @@ struct ImageView {
 	vk::ImageViewType         mType = vk::ImageViewType::e2D;
 	vk::ComponentMapping      mComponentMapping = {};
 
-	static ImageView Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
+	static ImageView Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource = { vk::ImageAspectFlagBits::eColor, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS }, const vk::ImageViewType type = vk::ImageViewType::e2D, const vk::ComponentMapping& componentMapping = {});
 
 	inline       vk::ImageView& operator*()        { return mView; }
 	inline const vk::ImageView& operator*() const  { return mView; }
@@ -502,6 +504,24 @@ struct ImageView {
 }
 
 namespace std {
+
+template<>
+struct hash<RoseEngine::ImageInfo> {
+	inline size_t operator()(const RoseEngine::ImageInfo& v) const {
+		return RoseEngine::HashArgs(
+			v.createFlags,
+			v.type,
+			v.format,
+			v.extent.x, v.extent.y, v.extent.z,
+			v.mipLevels,
+			v.arrayLayers,
+			v.samples,
+			v.usage,
+			v.tiling,
+			v.sharingMode,
+			RoseEngine::HashRange(v.queueFamilies) );
+	}
+};
 
 template<>
 struct hash<RoseEngine::ImageView> {

@@ -2,6 +2,7 @@
 
 #include "Buffer.hpp"
 #include "Image.hpp"
+#include "AccelerationStructure.hpp"
 #include "Pipeline.hpp"
 #include "ParameterMap.hpp"
 
@@ -64,7 +65,7 @@ struct ImageParameter {
 	ref<vk::raii::Sampler> sampler = {};
 };
 
-using AccelerationStructureParameter = ref<vk::raii::AccelerationStructureKHR>;
+using AccelerationStructureParameter = ref<AccelerationStructure>;
 
 using ShaderParameter = ParameterMap<
 	std::monostate,
@@ -105,6 +106,10 @@ private:
 		};
 		std::unordered_map<vk::BufferUsageFlags, std::vector<CachedBuffers>> mBuffers = {};
 		std::unordered_map<vk::BufferUsageFlags, std::vector<CachedBuffers>> mNewBuffers = {};
+
+
+		std::unordered_map<ImageInfo, std::vector<ref<Image>>> mImages = {};
+		std::unordered_map<ImageInfo, std::vector<ref<Image>>> mNewImages = {};
 	};
 	CachedData mCache = {};
 
@@ -148,8 +153,8 @@ public:
 	void PushConstants  (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter) const;
 	void BindParameters (const PipelineLayout& pipelineLayout, const ShaderParameter& rootParameter);
 
-	void PushDebugLabel(const std::string& name, const float4 color = float4(1,1,1,0));
-	void PopDebugLabel();
+	void PushDebugLabel(const std::string& name, const float4 color = float4(1,1,1,0)) const;
+	void PopDebugLabel() const;
 
 	#pragma region Barriers
 
@@ -318,7 +323,7 @@ public:
 	}
 
 	template<typename T = std::byte>
-	inline BufferRange<T> GetTransientBuffer(size_t count, vk::BufferUsageFlags usage) {
+	inline BufferRange<T> GetTransientBuffer(const size_t count, const vk::BufferUsageFlags usage) {
 		const size_t size = sizeof(T) * count;
 
 		BufferView hostBuffer = {};
@@ -337,8 +342,8 @@ public:
 		}
 
 		if (!buffer || buffer.size() < size) {
-			buffer = Buffer::Create
-				(*mDevice,
+			buffer = Buffer::Create(
+				*mDevice,
 				size,
 				usage,
 				vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -348,6 +353,18 @@ public:
 		}
 
 		return mCache.mNewBuffers[usage].emplace_back(hostBuffer, buffer).buffer;
+	}
+
+	ref<Image> GetTransientImage(const ImageInfo& info);
+	inline ref<Image> GetTransientImage(const uint3 extent, const vk::Format format, const vk::ImageUsageFlags usage, const uint32_t mipLevels = 1, const uint32_t arrayLayers = 1) {
+		return GetTransientImage(ImageInfo {
+			.format = format,
+			.extent = extent,
+			.mipLevels = mipLevels,
+			.arrayLayers = arrayLayers,
+			.usage = usage,
+			.queueFamilies = { QueueFamily() }
+		});
 	}
 
 	// Copies data to a host-visible buffer
@@ -531,6 +548,79 @@ public:
 
 			blit.srcOffsets[1] = blit.dstOffsets[1];
 		}
+	}
+
+	#pragma endregion
+
+	#pragma region Rasterization
+	inline void BeginRendering(const vk::ArrayProxy<std::pair<ImageView, vk::ClearValue>>& attachments) {
+		uint2 imageExtent;
+
+		std::vector<vk::RenderingAttachmentInfo> attachmentInfos;
+		vk::RenderingAttachmentInfo depthAttachmentInfo;
+		bool hasDepthAttachment = false;
+
+		attachmentInfos.reserve(attachments.size());
+		for (const auto& [attachment, clearValue] : attachments) {
+			imageExtent = attachment.Extent();
+			if (IsDepthStencil(attachment.GetImage()->Info().format)) {
+				AddBarrier(attachment, Image::ResourceState{
+					.layout = vk::ImageLayout::eDepthAttachmentOptimal,
+					.stage  = vk::PipelineStageFlagBits2::eLateFragmentTests,
+					.access =  vk::AccessFlagBits2::eDepthStencilAttachmentRead|vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+					.queueFamily = QueueFamily()
+				});
+
+				depthAttachmentInfo = vk::RenderingAttachmentInfo {
+					.imageView = *attachment,
+					.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+					.resolveMode = vk::ResolveModeFlagBits::eNone,
+					.resolveImageView = {},
+					.resolveImageLayout = vk::ImageLayout::eUndefined,
+					.loadOp  = vk::AttachmentLoadOp::eClear,
+					.storeOp = vk::AttachmentStoreOp::eStore,
+					.clearValue = clearValue
+				};
+
+				hasDepthAttachment = true;
+			} else {
+				AddBarrier(attachment, Image::ResourceState{
+					.layout = vk::ImageLayout::eColorAttachmentOptimal,
+					.stage  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+					.access =  vk::AccessFlagBits2::eColorAttachmentRead|vk::AccessFlagBits2::eColorAttachmentWrite,
+					.queueFamily = QueueFamily()
+				});
+
+				attachmentInfos.emplace_back(vk::RenderingAttachmentInfo {
+					.imageView = *attachment,
+					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+					.resolveMode = vk::ResolveModeFlagBits::eNone,
+					.resolveImageView = {},
+					.resolveImageLayout = vk::ImageLayout::eUndefined,
+					.loadOp  = vk::AttachmentLoadOp::eClear,
+					.storeOp = vk::AttachmentStoreOp::eStore,
+					.clearValue = clearValue
+				});
+			}
+		}
+
+		ExecuteBarriers();
+
+		mCommandBuffer.beginRendering(vk::RenderingInfo {
+			.renderArea = vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ imageExtent.x, imageExtent.y } },
+			.layerCount = 1,
+			.viewMask = 0,
+			.colorAttachmentCount = (uint32_t)attachmentInfos.size(),
+			.pColorAttachments = attachmentInfos.data(),
+			.pDepthAttachment = hasDepthAttachment ? &depthAttachmentInfo : nullptr,
+			.pStencilAttachment = nullptr
+		});
+
+		mCommandBuffer.setViewport(0, vk::Viewport{ 0, 0, (float)imageExtent.x, (float)imageExtent.y, 0, 1 });
+		mCommandBuffer.setScissor(0, vk::Rect2D{ vk::Offset2D{0, 0}, vk::Extent2D{ imageExtent.x, imageExtent.y } } );
+	}
+	inline void EndRendering() const {
+		mCommandBuffer.endRendering();
 	}
 
 	#pragma endregion

@@ -80,7 +80,10 @@ Image::~Image() {
 
 ImageView ImageView::Create(const ref<Image>& image, const vk::ImageSubresourceRange& subresource, const vk::ImageViewType type, const vk::ComponentMapping& componentMapping) {
 	if (!image) return {};
-	auto key = std::tie(subresource, type, componentMapping);
+	vk::ImageSubresourceRange s = subresource;
+	if (s.layerCount == VK_REMAINING_ARRAY_LAYERS) s.layerCount = image->Info().arrayLayers;
+	if (s.levelCount == VK_REMAINING_MIP_LEVELS)   s.levelCount = image->Info().mipLevels;
+	auto key = std::tie(s, type, componentMapping);
 	auto it = image->mCachedViews.find(key);
 	if (it == image->mCachedViews.end()) {
 		vk::ImageView v = image->mDevice.createImageView(vk::ImageViewCreateInfo{
@@ -88,13 +91,13 @@ ImageView ImageView::Create(const ref<Image>& image, const vk::ImageSubresourceR
 			.viewType = type,
 			.format = image->Info().format,
 			.components = componentMapping,
-			.subresourceRange = subresource });
+			.subresourceRange = s });
 		it = image->mCachedViews.emplace(key, v).first;
 	}
 	return ImageView{
 		.mView = it->second,
 		.mImage = image,
-		.mSubresource = subresource,
+		.mSubresource = s,
 		.mType = type,
 		.mComponentMapping = componentMapping
 	};

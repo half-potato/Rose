@@ -42,6 +42,7 @@ struct Transform {
 		t.transform = glm::tweakedInfinitePerspective(fovY, aspect, nearZ);
 		return t;
 	}
+	inline operator const float4x4&() const { return transform; }
 	#endif
 
 	inline float4 ProjectPointUnnormalized(const float4 v) CPP_CONST {

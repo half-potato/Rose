@@ -8,34 +8,40 @@ typedef float4 quat;
 
 // Quaternion multiplication
 // http://mathworld.wolfram.com/Quaternion.html
+[Differentiable]
 quat qmul(quat q1, quat q2) {
     return quat(
         q2.xyz * q1.w + q1.xyz * q2.w + cross(q1.xyz, q2.xyz),
         q1.w * q2.w - dot(q1.xyz, q2.xyz));
 }
 
+[Differentiable]
 quat q_conj(quat q) {
     return quat(-q.xyz, q.w);
 }
 
 // https://jp.mathworks.com/help/aeroblks/quaternioninverse.html
+[Differentiable]
 quat q_inverse(quat q) {
     return q_conj(q) / dot(q, q);
 }
 
 // Vector rotation with a quaternion
 // http://mathworld.wolfram.com/Quaternion.html
+[Differentiable]
 float3 q_rotate_vector(quat q, float3 v) {
     return qmul(q, qmul(quat(v, 0), q_conj(q))).xyz;
 }
 
 // A given angle of rotation about a given axis
+[Differentiable]
 quat q_angle_axis(float angle, float3 axis) {
     float sn = sin(angle * 0.5);
     float cs = cos(angle * 0.5);
     return quat(axis * sn, cs);
 }
 
+[Differentiable]
 quat q_slerp(quat a, quat b, float t) {
     // if either input is zero, return the other.
     bool az = all(a == 0);
@@ -76,6 +82,7 @@ quat q_slerp(quat a, quat b, float t) {
     return quat(0,0,0,1);
 }
 
+[Differentiable]
 float4x4 q_to_matrix(quat quat) {
     float4x4 m = float4x4(float4(0, 0, 0, 0), float4(0, 0, 0, 0), float4(0, 0, 0, 0), float4(0, 0, 0, 0));
 

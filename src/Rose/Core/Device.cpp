@@ -10,8 +10,20 @@
 
 namespace RoseEngine {
 
+auto ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features) {
+	vk::StructureChain<
+		vk::DeviceCreateInfo,
+		vk::PhysicalDeviceVulkan12Features,
+		vk::PhysicalDeviceVulkan13Features,
+		vk::PhysicalDevice16BitStorageFeatures,
+		vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT,
+		vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+		vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
+		vk::PhysicalDeviceRayQueryFeaturesKHR,
+		vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR,
+		vk::PhysicalDeviceMeshShaderFeaturesEXT
+		> createInfo = {};
 
-void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, auto& createInfo) {
 	features.fillModeNonSolid = true;
 	features.samplerAnisotropy = true;
 	//features.shaderImageGatherExtended = true;
@@ -21,7 +33,7 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 	features.sampleRateShading = true;
 	features.shaderInt16 = true;
 	features.shaderFloat64 = true;
-	//features.geometryShader = true;
+	features.geometryShader = true;
 	//features.shaderStorageBufferArrayDynamicIndexing = true;
 	//features.shaderSampledImageArrayDynamicIndexing = true;
 	//features.shaderStorageImageArrayDynamicIndexing = true;
@@ -78,6 +90,8 @@ void ConfigureFeatures(Device& device, vk::PhysicalDeviceFeatures& features, aut
 		v.meshShaderQueries = true;
 		v.taskShader = true;
 	});
+
+	return createInfo;
 }
 
 ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDevice& physicalDevice, const vk::ArrayProxy<const std::string>& deviceExtensions) {
@@ -89,7 +103,7 @@ ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDev
 	for (const auto& e : deviceExtensions)
 		device->mExtensions.emplace(e);
 
-	ConfigureFeatures(*device, device->mFeatures, device->mCreateInfo);
+	auto createStructureChain = ConfigureFeatures(*device, device->mFeatures);
 
 	// Configure queues
 
@@ -113,7 +127,7 @@ ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDev
 	for (const auto& s : device->mExtensions) deviceExts.emplace_back(s.c_str());
 	for (const auto& s : instance.EnabledLayers()) validationLayers.emplace_back(s.c_str());
 
-	vk::DeviceCreateInfo& createInfo = device->mCreateInfo.get<vk::DeviceCreateInfo>()
+	vk::DeviceCreateInfo& createInfo = createStructureChain.get<vk::DeviceCreateInfo>()
 		.setQueueCreateInfos(queueCreateInfos)
 		.setPEnabledLayerNames(validationLayers)
 		.setPEnabledExtensionNames(deviceExts)
@@ -131,8 +145,8 @@ ref<Device> Device::Create(const Instance& instance, const vk::raii::PhysicalDev
 		.instance = **instance,
 		.vulkanApiVersion = instance.VulkanVersion()
 	};
-	if (device->mExtensions.contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME))                     allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
-	if (std::get<vk::PhysicalDeviceVulkan12Features>(device->mCreateInfo).bufferDeviceAddress) allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	if (device->mExtensions.contains(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME))                      allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+	if (std::get<vk::PhysicalDeviceVulkan12Features>(createStructureChain).bufferDeviceAddress) allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 	vmaCreateAllocator(&allocatorInfo, &device->mMemoryAllocator);
 
 	// Create timeline semaphore

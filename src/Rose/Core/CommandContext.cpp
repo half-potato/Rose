@@ -38,6 +38,14 @@ void CommandContext::Begin() {
 			std::ranges::sort(bufs, {}, &CachedData::CachedBuffers::size);
 	}
 
+	if (!mCache.mNewImages.empty()) {
+		for (auto&[info, images] : mCache.mNewImages) {
+			for (auto& image : images)
+				mCache.mImages[info].emplace_back(std::move(image));
+			images.clear();
+		}
+	}
+
 	if (!mCache.mNewDescriptorSets.empty()) {
 		for (auto&[layout, sets] : mCache.mNewDescriptorSets)
 			for (auto& s : sets)
@@ -46,13 +54,13 @@ void CommandContext::Begin() {
 	}
 }
 
-void CommandContext::PushDebugLabel(const std::string& name, const float4 color) {
+void CommandContext::PushDebugLabel(const std::string& name, const float4 color) const {
 	if (!mDevice->DebugUtilsEnabled()) return;
 	mCommandBuffer.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT{
 		.pLabelName = name.c_str(),
 		.color = { { color.x, color.y, color.z, color.w } }	});
 }
-void CommandContext::PopDebugLabel() {
+void CommandContext::PopDebugLabel() const {
 	if (!mDevice->DebugUtilsEnabled()) return;
 	mCommandBuffer.endDebugUtilsLabelEXT();
 }
@@ -158,6 +166,22 @@ ref<DescriptorSets> CommandContext::GetDescriptorSets(const PipelineLayout& pipe
 
 	return descriptorSets;
 }
+
+ref<Image> CommandContext::GetTransientImage(const ImageInfo& info) {
+	ref<Image> image = {};
+	if (auto it_ = mCache.mImages.find(info); it_ != mCache.mImages.end()) {
+		auto& q = it_->second;
+		if (!q.empty()) {
+			image = std::move(q.back());
+			q.pop_back();
+		}
+	}
+
+	if (!image) image = Image::Create(GetDevice(), info);
+
+	return mCache.mNewImages[info].emplace_back(image);
+}
+
 
 uint32_t align16(uint32_t s) {
 	s = (s + 3)&(~3);
@@ -330,7 +354,7 @@ struct DescriptorSetWriter {
 					} else if (const auto* v = param.get_if<AccelerationStructureParameter>()) {
 						const auto& as = *v;
 						if (!as) continue;
-						WriteAccelerationStructure(*descriptorBinding, arrayIndex, bindingOffset, vk::WriteDescriptorSetAccelerationStructureKHR{}.setAccelerationStructures(**as));
+						WriteAccelerationStructure(*descriptorBinding, arrayIndex, bindingOffset, vk::WriteDescriptorSetAccelerationStructureKHR{}.setAccelerationStructures(***as));
 					}
 				} else {
 					std::cout << "Warning: Attempting to bind descriptor parameter to non-descriptor binding" << std::endl;

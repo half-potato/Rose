@@ -1,4 +1,6 @@
 #include <Rose/Core/WindowedApp.hpp>
+#include <Rose/Render/ViewportCamera.hpp>
+#include <Rose/Render/SceneRenderer/SceneRenderer.hpp>
 #include <Rose/Render/SceneRenderer/SceneEditor.hpp>
 
 #include <ImGuizmo.h>
@@ -6,27 +8,66 @@
 using namespace RoseEngine;
 
 int main(int argc, const char** argv) {
-
 	WindowedApp app("GLTF Viewer", {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 		VK_KHR_RAY_QUERY_EXTENSION_NAME,
-		VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME });
+		VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
+	});
 
 	auto sceneRenderer = make_ref<SceneRenderer>();
-	auto sceneEditor   = make_ref<SceneEditor>(sceneRenderer);
+	auto sceneEditor   = make_ref<SceneEditor>();
 
-	ViewportWidget viewport(*app.contexts[0], sceneRenderer, sceneEditor);
+	ref<Scene> scene = make_ref<Scene>();
+	sceneRenderer->SetScene(scene);
+	sceneEditor->SetScene(scene);
+
+	ViewportCamera camera = {};
 
 	app.AddMenuItem("File", [&]() {
-		if (ImGui::MenuItem("Open scene")) {
-			sceneEditor->LoadScene(*app.contexts[app.swapchain->ImageIndex()]);
+		if (ImGui::MenuItem("Open scene") || (ImGui::IsKeyDown(ImGuiKey_ModCtrl) && ImGui::IsKeyPressed(ImGuiKey_O), false)) {
+			scene->LoadDialog(app.CurrentContext());
 		}
 	});
-	app.AddWidget("Renderers", [&]()   { viewport.InspectorWidget(*app.contexts[app.swapchain->ImageIndex()]); }, true);
-	app.AddWidget("Viewport", [&]()    { viewport.Render(*app.contexts[app.swapchain->ImageIndex()], app.dt); }, true);
+	app.AddWidget("Renderers", [&]() { sceneEditor->InspectorWidget(app.CurrentContext()); }, true);
+
+	app.AddWidget("Viewport", [&]() {
+		camera.Update(app.dt);
+
+		const float2 extentf = std::bit_cast<float2>(ImGui::GetWindowContentRegionMax()) - std::bit_cast<float2>(ImGui::GetWindowContentRegionMin());
+		const uint2 extent = extentf;
+		if (extent.x == 0 || extent.y == 0) return;
+
+		CommandContext& context = app.CurrentContext();
+
+		const Transform cameraToWorld = camera.GetCameraToWorld();
+		const Transform projection    = camera.GetProjection(extent.x / (float)extent.y);
+
+		sceneRenderer->PreRender(context, extent, cameraToWorld, projection);
+		sceneEditor->PreRender(context, inverse(cameraToWorld), projection);
+
+
+		const ImageView& renderTarget = sceneRenderer->GetAttachment(0);
+		const ImageView& visibility   = sceneRenderer->GetAttachment(1);
+
+		ImGui::Image(Gui::GetTextureID(renderTarget, vk::Filter::eNearest), std::bit_cast<ImVec2>(extentf));
+
+		const float2 viewportMin = std::bit_cast<float2>(ImGui::GetItemRectMin());
+		const float2 viewportMax = std::bit_cast<float2>(ImGui::GetItemRectMax());
+		const float4 viewportRect = float4(viewportMin, viewportMax - viewportMin);
+
+		// ImGuizmo viewport
+		ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportMax.x - viewportMin.x, viewportMax.y - viewportMin.y);
+		ImGuizmo::SetID(0);
+
+		sceneRenderer->Render(context);
+
+		sceneRenderer->PostRender(context);
+		sceneEditor->PostRender(context, renderTarget, visibility);
+	}, true, WindowedApp::WidgetFlagBits::eNoBorders);
+
 	app.AddWidget("Scene graph", [&]() { sceneEditor->SceneGraphWidget(); }, true);
 	app.AddWidget("Tools", [&]()       { sceneEditor->ToolsWidget(); }, true);
 

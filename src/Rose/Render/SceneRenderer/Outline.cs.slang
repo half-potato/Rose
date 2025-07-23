@@ -17,8 +17,8 @@ void main(uint3 index: SV_DispatchThreadID) {
 	float f = 0;
 
     const int r = 2;
-    for (uint x = -r; x <= r; x++) {
-        for (uint y = -r; y <= r; y++) {
+    for (int x = -r; x <= r; x++) {
+        for (int y = -r; y <= r; y++) {
             const int2 i = int2(index.xy) + int2(x, y);
             if (any(i < 0) || any(i >= extent) || (x == 0 && y == 0))
                 continue;

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Rose/Core/Buffer.hpp>
+#include <Rose/Core/CommandContext.hpp>
 #include <Rose/Core/Hash.hpp>
-#include "AccelerationStructure.hpp"
 
 namespace RoseEngine {
 
@@ -72,7 +71,7 @@ struct Mesh {
 	uint32_t              indexSize = sizeof(uint32_t);
 	vk::PrimitiveTopology topology = {};
 	vk::AabbPositionsKHR  aabb = {};
-	AccelerationStructure blas = {};
+	ref<AccelerationStructure> blas = {};
 	uint64_t              blasUpdateTime = 0;
 	uint64_t              lastUpdateTime = 0;
 
@@ -80,29 +79,33 @@ struct Mesh {
 
 	MeshLayout GetLayout(const ShaderModule& vertexShader) const;
 	void Bind(CommandContext& context, const MeshLayout& layout) const;
+
+	inline void UpdateBLAS(CommandContext& context, const bool opaque) {
+		if (blas && lastUpdateTime <= blasUpdateTime)
+			return;
+
+		auto [positions, vertexLayout] = vertexAttributes.at(MeshVertexAttributeType::ePosition)[0];
+		const uint32_t vertexCount = (uint32_t)((positions.size_bytes() - vertexLayout.offset) / vertexLayout.stride);
+		const uint32_t primitiveCount = indexBuffer.size_bytes() / (indexSize * 3);
+
+		vk::AccelerationStructureGeometryTrianglesDataKHR triangles {
+			.vertexFormat = vertexLayout.format,
+			.vertexData = context.GetDevice()->getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = **positions.mBuffer }) + positions.mOffset,
+			.vertexStride = vertexLayout.stride,
+			.maxVertex = vertexCount,
+			.indexType = IndexType(),
+			.indexData = context.GetDevice()->getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = **indexBuffer.mBuffer }) + indexBuffer.mOffset };
+
+		vk::AccelerationStructureGeometryKHR geometry {
+			.geometryType = vk::GeometryTypeKHR::eTriangles,
+			.geometry = triangles,
+			.flags = opaque ? vk::GeometryFlagBitsKHR::eOpaque : vk::GeometryFlagBitsKHR{}};
+
+		vk::AccelerationStructureBuildRangeInfoKHR range{ .primitiveCount = primitiveCount };
+		blas = AccelerationStructure::Create(context, vk::AccelerationStructureTypeKHR::eBottomLevel, geometry, range);
+		blasUpdateTime = context.GetDevice().NextTimelineSignal();
+	}
 };
-
-inline AccelerationStructure AccelerationStructure::Create(CommandContext& context, const Mesh& mesh, const bool opaque) {
-	auto [positions, vertexLayout] = mesh.vertexAttributes.at(MeshVertexAttributeType::ePosition)[0];
-	const uint32_t vertexCount = (uint32_t)((positions.size_bytes() - vertexLayout.offset) / vertexLayout.stride);
-	const uint32_t primitiveCount = mesh.indexBuffer.size_bytes() / (mesh.indexSize * 3);
-
-	vk::AccelerationStructureGeometryTrianglesDataKHR triangles {
-		.vertexFormat = vertexLayout.format,
-		.vertexData = context.GetDevice()->getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = **positions.mBuffer }) + positions.mOffset,
-		.vertexStride = vertexLayout.stride,
-		.maxVertex = vertexCount,
-		.indexType = mesh.IndexType(),
-		.indexData = context.GetDevice()->getBufferAddress(vk::BufferDeviceAddressInfo{ .buffer = **mesh.indexBuffer.mBuffer }) + mesh.indexBuffer.mOffset };
-
-	vk::AccelerationStructureGeometryKHR geometry {
-		.geometryType = vk::GeometryTypeKHR::eTriangles,
-		.geometry = triangles,
-		.flags = opaque ? vk::GeometryFlagBitsKHR::eOpaque : vk::GeometryFlagBitsKHR{}};
-
-	vk::AccelerationStructureBuildRangeInfoKHR range{ .primitiveCount = primitiveCount };
-	return Create(context, vk::AccelerationStructureTypeKHR::eBottomLevel, geometry, range);
-}
 
 }
 
