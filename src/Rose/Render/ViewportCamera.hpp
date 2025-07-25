@@ -104,7 +104,7 @@ struct ViewportCamera {
         }
         switch (mode) {
             case CameraMode::Euler: ImGui::DragFloat2("Angles", &eulerAngles.x, 0.01f); break;
-            case CameraMode::Unlocked: if (ImGui::InputFloat4("Quaternion", &rotation.w)) { rotation = glm::normalize(rotation); } break;
+            case CameraMode::Unlocked: if (ImGui::InputFloat4("Quaternion", &rotation.x)) { rotation = glm::normalize(rotation); } break;
         }
 
         // --- Projection Mode ---
@@ -138,7 +138,7 @@ struct ViewportCamera {
 				// eulerAngles.x = clamp(eulerAngles.x, -float(M_PI/2), float(M_PI/2));
 				switch (mode) {
 					case CameraMode::Euler:
-						eulerAngles += dt * sensitivity;
+						eulerAngles += mouseDelta * sensitivity;
 						eulerAngles.x = glm::clamp(eulerAngles.x, -float(M_PI / 2.0f), float(M_PI / 2.0f));
 						break;
 					case CameraMode::Unlocked: {
