@@ -131,7 +131,7 @@ struct ViewportCamera {
 
 	inline void Update(double dt) {
 		if (ImGui::IsWindowHovered()) {
-			if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+			if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 				const float2 mouseDelta = -float2(ImGui::GetIO().MouseDelta.y, ImGui::GetIO().MouseDelta.x);
 				const float sensitivity = float(M_PI) / 1920.f;
 				// eulerAngles += -float2(ImGui::GetIO().MouseDelta.y, ImGui::GetIO().MouseDelta.x) * float(M_PI) / 1920.f;
@@ -159,10 +159,10 @@ struct ViewportCamera {
 		}
 
 		if (ImGui::IsWindowFocused()) {
-			if (ImGui::GetIO().MouseWheel != 0) {
-				moveSpeed *= (1 + ImGui::GetIO().MouseWheel / 8);
-				moveSpeed = std::max(moveSpeed, .05f);
-			}
+			// if (ImGui::GetIO().MouseWheel != 0) {
+			// 	moveSpeed *= (1 + ImGui::GetIO().MouseWheel / 8);
+			// 	moveSpeed = std::max(moveSpeed, .05f);
+			// }
 
 			float3 move = float3(0,0,0);
 			if (ImGui::IsKeyDown(ImGuiKey::ImGuiKey_W)) move += float3( 0, 0,-1);

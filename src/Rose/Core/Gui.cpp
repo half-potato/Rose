@@ -10,7 +10,22 @@
 #include <imnodes.h>
 #include <implot.h>
 
+#include <filesystem>
+#include <unistd.h>
+
 namespace RoseEngine {
+
+std::string getExecutableDir() {
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    
+    if (count != -1) {
+        std::string path_str(result, count);
+        
+        return std::filesystem::path(path_str).parent_path().string();
+    }
+    return "";
+}
 
 weak_ref<Device> Gui::mDevice = {};
 vk::raii::RenderPass Gui::mRenderPass = nullptr;
@@ -250,9 +265,13 @@ void Gui::Initialize(CommandContext& context, const Window& window, const Swapch
 	ImGui_ImplVulkan_Init(&init_info, *mRenderPass);
 
 	// Upload Fonts
+	//
+	std::filesystem::path source_path = getExecutableDir();
+	std::filesystem::path font_path = source_path / "DroidSans.ttf";
+	std::cout << "Font path" << font_path << std::endl;
 
-	ImGui::GetIO().Fonts->AddFontFromFileTTF("DroidSans.ttf", 16.f);
-	mHeaderFont = ImGui::GetIO().Fonts->AddFontFromFileTTF("DroidSans.ttf", 20.f);
+	ImGui::GetIO().Fonts->AddFontFromFileTTF(font_path.c_str(), 16.f);
+	mHeaderFont = ImGui::GetIO().Fonts->AddFontFromFileTTF(font_path.c_str(), 20.f);
 
 	context.Begin();
 	ImGui_ImplVulkan_CreateFontsTexture(**context);
