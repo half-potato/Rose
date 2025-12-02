@@ -12,25 +12,29 @@ set(ROSE_BUILD_APPS      ON CACHE BOOL "Build default applications")
 set(SLANG_BUILD_DIR      "" CACHE PATH "Optional path to Slang build directory.")
 
 # ---------------------------------------------------------------------------
-# 1. FETCH VULKAN HEADERS
+# 1. FIND DEPENDENCIES
 # ---------------------------------------------------------------------------
-include(FetchContent)
 
-set(VULKAN_HEADER_VERSION "v1.3.296")
+find_package(Vulkan QUIET)
+if (NOT ${Vulkan_FOUND})
+	# ---------------------------------------------------------------------------
+	# FETCH VULKAN HEADERS
+	# ---------------------------------------------------------------------------
+	include(FetchContent)
 
-message(STATUS "Fetching Vulkan Headers version: ${VULKAN_HEADER_VERSION}")
-FetchContent_Declare(
-    Vulkan-Headers
-    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
-    GIT_TAG        ${VULKAN_HEADER_VERSION}
-)
-# This populates vulkan-headers_SOURCE_DIR
-FetchContent_MakeAvailable(Vulkan-Headers)
+	set(VULKAN_HEADER_VERSION "v1.3.296")
 
-# ---------------------------------------------------------------------------
-# 2. FIND DEPENDENCIES
-# ---------------------------------------------------------------------------
-find_package(Vulkan REQUIRED)
+	message(STATUS "Fetching Vulkan Headers version: ${VULKAN_HEADER_VERSION}")
+	FetchContent_Declare(
+		Vulkan-Headers
+		GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+		GIT_TAG        ${VULKAN_HEADER_VERSION}
+	)
+	# This populates vulkan-headers_SOURCE_DIR
+	FetchContent_MakeAvailable(Vulkan-Headers)
+
+	find_package(Vulkan REQUIRED)
+endif()
 
 add_compile_definitions(
     _USE_MATH_DEFINES
