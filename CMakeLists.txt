@@ -71,9 +71,6 @@ target_sources(RoseLib
         ${CORE_SLANG}
 )
 
-# ---------------------------------------------------------------------------
-# 3. CRITICAL FIX: INCLUDE DIRECTORIES
-# ---------------------------------------------------------------------------
 target_include_directories(RoseLib
     # 'BEFORE' ensures these paths are checked FIRST, overriding /usr/include
     BEFORE
@@ -88,9 +85,6 @@ target_include_directories(RoseLib
         thirdparty/glfw/deps
 )
 
-# ---------------------------------------------------------------------------
-# 4. LINKING (All must use PUBLIC/PRIVATE keywords now)
-# ---------------------------------------------------------------------------
 
 # Link the System Loader (libvulkan.so), but rely on the headers included above
 target_link_libraries(RoseLib PUBLIC Vulkan::Vulkan)
